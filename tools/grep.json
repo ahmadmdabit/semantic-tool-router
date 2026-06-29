@@ -1,6 +1,37 @@
 {
   "name": "grep",
   "description": "Search for a regex pattern within files. searchPath can be a file path or glob pattern (e.g., 'src/**/*.ts').",
+  "intent": "search inside files for a regex pattern",
+  "examples": [
+    "Find every TODO comment in src/**/*.ts",
+    "Grep for fetch( calls inside lib/",
+    "Search for the pattern 'export function' in src/main.ts"
+  ],
+"whenToUse": [
+    "The user has a regex or literal string and wants the matching lines across files.",
+    "The search target is file *contents* (not file names or paths).",
+    "The user accepts match-level output (line, span, context) rather than whole files."
+  ],
+  "whenNotToUse": [
+    "The user wants to match file *names*, not contents. Use glob instead.",
+    "The user wants to read a specific known file. Use readFile instead.",
+    "The user wants to edit or replace the matched text. Use editFile instead."
+  ],
+  "triggers": [
+    "grep",
+    "grep for",
+    "regex",
+    "regex pattern",
+    "search for",
+    "search inside",
+    "find keyword",
+    "find the pattern",
+    "match pattern",
+    "match the pattern",
+    "find in files",
+    "search within files"
+  ],
+  "boosts": [],
   "parameters": {
     "type": "object",
     "properties": {

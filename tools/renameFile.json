@@ -1,6 +1,31 @@
 {
   "name": "renameFile",
   "description": "Rename an existing file to a new path within the base directory. Fails if source doesn't exist or target already exists.",
+  "intent": "rename a file from one path to another",
+  "examples": [
+    "Rename src/index.tsx to src/main.tsx",
+    "Change the file name of docs/old.md to docs/new.md"
+  ],
+"whenToUse": [
+    "The user wants to change a file's path but keep its location and contents intact.",
+    "Both source and target sit inside the same base directory (no cross-directory rename).",
+    "The new path must not already exist (the command fails on collision instead of overwriting)."
+  ],
+  "whenNotToUse": [
+    "The user wants to move the file to a different parent directory. Use moveFile instead.",
+    "The file should be relocated across devices. Use moveFile instead (it does copy-then-delete).",
+    "The user wants to read, discover, or delete the file. Use readFile / glob instead."
+  ],
+  "triggers": [
+    "rename file",
+    "rename the file",
+    "change file name",
+    "change the file name",
+    "file rename",
+    "rename to",
+    "rename from"
+  ],
+  "boosts": ["moveFile", "renameDirectory"],
   "parameters": {
     "type": "object",
     "properties": {

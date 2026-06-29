@@ -1,6 +1,37 @@
 {
   "name": "editFile",
   "description": "Apply a targeted text replacement. Token-efficient. Supports exact string (default) or Regex (isRegex=true). Fails safely if 0 matches found.",
+  "intent": "edit a file in place by replacing text",
+  "examples": [
+    "Edit src/index.ts to change the import path",
+    "Replace all TODO: with DONE: in notes.md",
+    "Use a regex to rewrite function signatures across the file"
+  ],
+  "whenToUse": [
+    "The user wants to change a specific span of text inside an existing file.",
+    "A small, surgical update is preferred over rewriting the whole file.",
+    "Either exact-string or regex matching identifies the target span."
+  ],
+  "whenNotToUse": [
+    "The user wants to create a brand new file or fully replace an existing one. Use writeFile instead.",
+    "The change touches many files at once; consider grep then-file editFile.",
+    "The user only wants to read the file. Use readFile instead."
+  ],
+  "triggers": [
+    "edit file",
+    "edit the file",
+    "replace text",
+    "replace in file",
+    "regex replace",
+    "regex replacement",
+    "modify file contents",
+    "modify the file",
+    "change text in",
+    "update the file",
+    "patch the file",
+    "rewrite the file"
+  ],
+  "boosts": ["writeFile"],
   "parameters": {
     "type": "object",
     "properties": {

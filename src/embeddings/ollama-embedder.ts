@@ -1,4 +1,4 @@
-import { IEmbedder } from '../types.js';
+import { IEmbedder, EmbedType } from '../types.js';
 
 export class OllamaEmbedder implements IEmbedder {
   private readonly baseUrl: string;
@@ -15,9 +15,16 @@ export class OllamaEmbedder implements IEmbedder {
     this.dimensions = dimensions;
   }
 
-  async embed(text: string): Promise<number[]> {
+  // nomic-embed-text v1.5+ expects retrieval-task prefixes. Default 'document'
+  // preserves backward-calls that omit the arg.
+  async embed(text: string, type: EmbedType = 'document'): Promise<number[]> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+
+    // Prefix keeps query and document embeddings on-manifold for nomic models;
+    // non-nomic models tolerate it because the trailing payload still carries
+    // the original text verbatim.
+    const prompt = type === 'query' ? `search_query: ${text}` : `search_document: ${text}`;
 
     let response: Response;
     try {
@@ -26,7 +33,7 @@ export class OllamaEmbedder implements IEmbedder {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: this.model,
-          prompt: text,
+          prompt,
         }),
         signal: controller.signal,
       });

@@ -1,6 +1,39 @@
 {
   "name": "scanDirectory",
-  "description": "Scan directory for text files; returns array of {timestamp, path, content, tokens} within context limits",
+  "description": "Scan directory for text files; returns array of {timestamp, path, content, tokens} within context limits.",
+  "intent": "scan directory contents with file payloads",
+  "examples": [
+    "Scan src/ and return the content of each file",
+    "Walk the docs directory and return timestamps and content",
+    "Index every text file under lib/"
+  ],
+"whenToUse": [
+    "The user needs both the names of files and their contents in one pass.",
+    "The caller will filter, embed, or compare file payloads downstream.",
+    "A context-window budget (maxChars) bounds the result for an LLM prompt."
+  ],
+  "whenNotToUse": [
+    "The user only needs names or directory entries. Use listDirectory instead (cheaper, no content).",
+    "The user only needs one specific file. Use readFile instead.",
+    "The user wants pattern-based file discovery. Use glob instead."
+  ],
+  "triggers": [
+    "scan directory",
+    "scan the directory",
+    "walk directory",
+    "walk the directory",
+    "traverse directory",
+    "traverse the directory",
+    "index directory",
+    "index the directory",
+    "crawl directory",
+    "crawl the directory",
+    "directory walk",
+    "directory scan",
+    "file payloads",
+    "timestamps and content"
+  ],
+  "boosts": ["listDirectory"],
   "parameters": {
     "type": "object",
     "properties": {

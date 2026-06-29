@@ -1,6 +1,36 @@
 {
   "name": "moveDirectory",
   "description": "Move a directory and all its contents to a new path. Automatically handles cross-device moves by copying recursively then deleting the original.",
+  "intent": "move a directory and all its contents to a new path",
+  "examples": [
+    "Move the src/components/ directory into ui/components/",
+    "Relocate the docs folder into website/docs/"
+  ],
+"whenToUse": [
+    "The source is a directory (contains children) and must land under a new parent.",
+    "Both endpoints are directories, not files.",
+    "The user wants the existing name to disappear after the move."
+  ],
+  "whenNotToUse": [
+    "Only a single file needs to move. Use moveFile instead.",
+    "The user just wants it renamed within the same parent. Use renameDirectory instead.",
+    "The user wants to list or read the directory. Use listDirectory / scanDirectory / readFile instead."
+  ],
+  "triggers": [
+    "move directory",
+    "move the directory",
+    "move folder",
+    "move the folder",
+    "relocate directory",
+    "relocate the directory",
+    "relocate folder",
+    "relocate the folder",
+    "transfer directory",
+    "transfer the directory",
+    "shift directory",
+    "shift the directory"
+  ],
+  "boosts": ["renameDirectory", "moveFile"],
   "parameters": {
     "type": "object",
     "properties": {

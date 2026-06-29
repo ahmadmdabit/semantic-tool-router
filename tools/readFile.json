@@ -1,6 +1,37 @@
 {
   "name": "readFile",
   "description": "Read the content of a text file. Path must be relative to scanned directory or absolute within allowed roots.",
+  "intent": "read file contents",
+  "examples": [
+    "Read the content of src/index.ts",
+    "Show me what package.json contains",
+    "Print the contents of README.md"
+  ],
+"whenToUse": [
+    "The user names a specific file path and wants its contents returned verbatim.",
+    "The path points to a single known file rather than a wildcard or pattern.",
+    "The user asks for metadata, text, or body of a previously-located file."
+  ],
+  "whenNotToUse": [
+    "The user wants to discover files matching a pattern. Use glob instead.",
+    "The user wants to search inside many files for a regex or keyword. Use grep instead.",
+    "The user wants to move, rename, or otherwise revise the file. Use moveFile / renameFile / editFile instead."
+  ],
+  "triggers": [
+    "read file",
+    "read content",
+    "read the file",
+    "print contents",
+    "print the file",
+    "show me the file",
+    "show me the contents",
+    "open the file",
+    "display the file",
+    "file contents",
+    "file body",
+    "file text"
+  ],
+  "boosts": [],
   "parameters": {
     "type": "object",
     "properties": {

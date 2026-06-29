@@ -1,6 +1,37 @@
 {
   "name": "listDirectory",
   "description": "List files and directories in a given path.",
+  "intent": "list directory entries",
+  "examples": [
+    "List the files in src/",
+    "Show me what's inside the docs directory",
+    "Enumerate the contents of the current folder"
+  ],
+"whenToUse": [
+    "The user supplies a directory path and wants to see its immediate children.",
+    "There is no file-name pattern to match — just a plain listing of entries.",
+    "The user wants names (paths, timestamps, metadata), not file contents."
+  ],
+  "whenNotToUse": [
+    "The user wants to match files by name pattern. Use glob instead.",
+    "The user wants file contents or token-level payloads. Use scanDirectory or readFile instead.",
+    "The user wants to move or rename the directory. Use moveDirectory / renameDirectory instead."
+  ],
+  "triggers": [
+    "list directory",
+    "list the directory",
+    "list files",
+    "list the files",
+    "show directory",
+    "show the directory",
+    "enumerate directory",
+    "enumerate the directory",
+    "directory listing",
+    "directory entries",
+    "folder listing",
+    "ls"
+  ],
+  "boosts": ["scanDirectory"],
   "parameters": {
     "type": "object",
     "properties": {

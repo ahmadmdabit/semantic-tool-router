@@ -1,6 +1,37 @@
 {
   "name": "writeFile",
   "description": "Write content to a file. Use with caution; overwrites existing files.",
+  "intent": "create or overwrite whole files with literal content",
+  "examples": [
+    "Create a new hello.txt containing Hello, world!",
+    "Write the JSON config to .env.local",
+    "Overwrite the README with new markdown content"
+  ],
+"whenToUse": [
+    "The user wants to write a complete file in one shot.",
+    "The entire desired content is known up front.",
+    "Creating a new file or fully replacing an existing file is acceptable."
+  ],
+  "whenNotToUse": [
+    "Only a small snippet inside an existing file needs to change. Use editFile instead.",
+    "The change is a regex replacement across many files. Use editFile with isRegex=true instead.",
+    "The user only wants to read the file. Use readFile instead."
+  ],
+  "triggers": [
+    "write file",
+    "write the file",
+    "create file",
+    "create the file",
+    "new file",
+    "overwrite file",
+    "overwrite the file",
+    "save file",
+    "save the file",
+    "generate file",
+    "generate the file",
+    "write content to"
+  ],
+  "boosts": ["editFile"],
   "parameters": {
     "type": "object",
     "properties": {

@@ -1,6 +1,35 @@
 {
   "name": "moveFile",
   "description": "Move a file to a new path. Automatically handles cross-device moves by copying then deleting the original.",
+  "intent": "move a file from one path to another path",
+  "examples": [
+    "Move src/old.ts to src/new.ts",
+    "Relocate docs/README.md to README.md",
+    "Shift build/output.js to dist/output.js"
+  ],
+"whenToUse": [
+    "The user supplies a source path and a destination path for a single file.",
+    "The intent is to change the file's location, not its contents.",
+    "Both paths refer to files (not directories)."
+  ],
+  "whenNotToUse": [
+    "The user wants only the file renamed in place. Use renameFile instead.",
+    "The user is referring to a directory hierarchy. Use moveDirectory instead.",
+    "The user wants to read, list, or discover the file. Use readFile / listDirectory / glob instead."
+  ],
+  "triggers": [
+    "move file",
+    "move the file",
+    "relocate file",
+    "relocate the file",
+    "shift file",
+    "shift the file",
+    "transfer file",
+    "transfer the file",
+    "move from",
+    "move to"
+  ],
+  "boosts": ["renameFile", "moveDirectory"],
   "parameters": {
     "type": "object",
     "properties": {

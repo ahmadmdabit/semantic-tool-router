@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { OllamaEmbedder } from '../embeddings/ollama-embedder.js';
 import { VectorStore } from '../vector/vector-store.js';
+import { retrieve } from '../routing/retriever.js';
 
 export function createRouteCommand(): Command {
   const command = new Command('route');
@@ -14,9 +15,11 @@ export function createRouteCommand(): Command {
     .option('-d, --dimensions <number>', 'Embedding dimensions (must match index)', '768')
     .option('-u, --url <url>', 'Ollama API URL', process.env.OLLAMA_HOST || 'http://localhost:11434')
     .option('-j, --json', 'Output results as JSON')
+    .option('-t, --threshold <number>', 'Drop tools with composite score below this (0 disables)', '0')
     .action(async (query: string, options) => {
       const k = parseInt(options.topK, 10);
       const dimensions = parseInt(options.dimensions, 10);
+      const threshold = parseFloat(options.threshold);
 
       if (isNaN(k) || k <= 0) {
         console.error('Error: --top-k must be a positive integer');
@@ -25,6 +28,11 @@ export function createRouteCommand(): Command {
 
       if (isNaN(dimensions) || dimensions <= 0) {
         console.error('Error: --dimensions must be a positive integer');
+        process.exit(1);
+      }
+
+      if (isNaN(threshold) || threshold < 0 || threshold > 1) {
+        console.error('Error: --threshold must be a number in the range [0,1]');
         process.exit(1);
       }
 
@@ -55,18 +63,29 @@ export function createRouteCommand(): Command {
       }
 
       if (!options.json) console.log(`Embedding query: "${query}"`);
-      const queryEmbedding = await embedder.embed(query);
-
       if (!options.json) console.log(`Searching top ${k} tools...`);
-      const results = await store.search(queryEmbedding, k);
+
+      // retrieve() embeds the query with the 'query' retrieval prefix, then
+      // fuses cosine (S1), structural intent (S2), and keyword overlap (S3)
+      // via RRF. Threshold (if set) is applied inside retrieve().
+      const results = await retrieve(query, embedder, store, {
+        k,
+        threshold,
+      });
 
       if (options.json) {
         console.log(JSON.stringify(results, null, 2));
       } else {
         console.log('\nTop relevant tools:');
-        results.forEach((tool, index) => {
-          console.log(`${index + 1}. ${tool.name}`);
-          console.log(`   Description: ${tool.description}`);
+        if (results.length === 0) {
+          console.log('  (no tools matched the threshold)');
+        }
+        results.forEach((r, index) => {
+          console.log(`${index + 1}. ${r.tool.name}  (score: ${r.score.toFixed(4)})`);
+          console.log(`   Description: ${r.tool.description}`);
+          if (r.debug?.intent && r.debug.intent !== 'none') {
+            console.log(`   Intent signal: ${r.debug.intent}`);
+          }
           console.log('');
         });
       }

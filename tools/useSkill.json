@@ -1,6 +1,37 @@
 {
   "name": "useSkill",
   "description": "Load a skill file (workflow, prompt template, script, or configuration) for the agent to apply. Returns the file content for immediate processing.",
+  "intent": "load a skill file for the agent to use",
+  "examples": [
+    "Use the data-analysis skill from skills/data-analysis.md",
+    "Load the export workflow from workflows/export.ts",
+    "Apply the system prompt prompt defined in prompts/system-v2.txt"
+  ],
+"whenToUse": [
+    "The user wants the agent to apply an existing skill, workflow, or prompt template.",
+    "The target file defines reusable behavior (markdown, TypeScript, txt) under a known skills directory.",
+    "The agent should load the file's content as instructions, not as data to query."
+  ],
+  "whenNotToUse": [
+    "The user wants to read a normal source file (not a skill definition). Use readFile instead.",
+    "The user wants to search inside many skill files. Use grep instead.",
+    "The user wants to run a skill as a shell command. Use runCommand instead."
+  ],
+  "triggers": [
+    "use skill",
+    "use the skill",
+    "load skill",
+    "load the skill",
+    "apply skill",
+    "apply the skill",
+    "skill file",
+    "workflow file",
+    "prompt template",
+    "system prompt",
+    "agent skill",
+    "invoke skill"
+  ],
+  "boosts": [],
   "parameters": {
     "type": "object",
     "properties": {

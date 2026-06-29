@@ -1,6 +1,41 @@
 {
   "name": "webFetch",
   "description": "Fetch content from a public URL. Returns raw HTML or a Markdown version.",
+  "intent": "fetch content from a public URL",
+  "examples": [
+    "Fetch the documentation at https://example.com/docs as Markdown",
+    "Download the raw HTML of https://example.com",
+    "Retrieve the JSON response from https://api.example.com/data"
+  ],
+"whenToUse": [
+    "The content lives at a public HTTP(S) URL.",
+    "The user wants the page body, API response, or asset downloaded to local memory.",
+    "Choosing Markdown strips tags and is better for downstream LLM processing."
+  ],
+  "whenNotToUse": [
+    "The content is a local file. Use readFile instead.",
+    "The content is reached via shell/network tooling outside HTTP. Use runCommand instead.",
+    "The URL is private or requires auth the tool cannot supply — the fetch will fail."
+  ],
+  "triggers": [
+    "fetch",
+    "fetch url",
+    "fetch the url",
+    "download",
+    "download the",
+    "web page",
+    "webpage",
+    "http",
+    "https",
+    "url",
+    "api response",
+    "json response",
+    "html",
+    "markdown",
+    "scrape",
+    "retrieve url"
+  ],
+  "boosts": [],
   "parameters": {
     "type": "object",
     "properties": {

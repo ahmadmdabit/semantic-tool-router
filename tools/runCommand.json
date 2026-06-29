@@ -1,6 +1,43 @@
 {
   "name": "runCommand",
-  "description": "Execute a safe, whitelisted cmd.exe command. Allowed: dir, echo, type.",
+  "description": "Execute a safe, whitelisted cmd.exe command. Allowed: dir, echo, type, npm, yarn, pnpm, bun, python, uv, pip, dotnet.",
+  "intent": "run a whitelisted shell command",
+  "examples": [
+    "Run 'npm install' in the project",
+    "Execute 'dir' to list the current directory contents",
+    "Run 'python scripts/build.py' with extra args"
+  ],
+"whenToUse": [
+    "The task is to exec a shell command from the whitelisted set (dir, echo, type, npm, yarn, pnpm, bun, python, uv, pip, dotnet).",
+    "The result is a side-effect (build, install, execute) rather than a structured read of a local file.",
+    "The command is idempotent or the user explicitly accepts its effect."
+  ],
+  "whenNotToUse": [
+    "The task is to read, list, or discover local files. Use readFile / listDirectory / scanDirectory / glob instead.",
+    "The task is to modify local files. Use writeFile / editFile instead.",
+    "The command is not in the whitelist — this tool will refuse to run it."
+  ],
+  "triggers": [
+    "run command",
+    "run the command",
+    "execute command",
+    "execute the command",
+    "shell command",
+    "terminal command",
+    "cmd",
+    "npm",
+    "yarn",
+    "pnpm",
+    "bun",
+    "python",
+    "uv",
+    "pip",
+    "dotnet",
+    "install dependency",
+    "build the project",
+    "run script"
+  ],
+  "boosts": [],
   "parameters": {
     "type": "object",
     "properties": {

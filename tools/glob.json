@@ -1,6 +1,34 @@
 {
   "name": "glob",
   "description": "Find files matching a glob pattern. The pattern embeds the path (e.g., 'src/**/*.ts', '*.json', 'docs/**/*.md').",
+  "intent": "find files by pattern",
+  "examples": [
+    "Find all .ts files in src",
+    "Locate files matching *.json",
+    "Show every markdown file under docs",
+    "Which files match the pattern tests/**/*.test.ts"
+  ],
+"whenToUse": [
+    "The query contains a glob pattern (tokens like *, **, ?, {…}, […]) and the user wants matching files.",
+    "The user wants to discover or list files whose names or paths follow a wildcard shape.",
+    "Neither a file's content nor its exact location is known in advance."
+  ],
+  "whenNotToUse": [
+    "The user wants to read the contents of a specific, known file. Use readFile instead.",
+    "The user wants to search inside file contents for a regex or keyword. Use grep instead.",
+    "The user just wants the immediate children of a directory without any name pattern. Use listDirectory instead."
+  ],
+  "triggers": [
+    "glob",
+    "glob pattern",
+    "filename pattern",
+    "file pattern",
+    "wildcard",
+    "find files",
+    "locate files",
+    "match files"
+  ],
+  "boosts": ["grep"],
   "parameters": {
     "type": "object",
     "properties": {

@@ -3,4 +3,4 @@ dist/
 build/
 node_modules
 
-vector-store.json
+vector-store.jsonl
