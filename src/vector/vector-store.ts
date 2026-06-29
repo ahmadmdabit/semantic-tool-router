@@ -35,10 +35,13 @@ export class VectorStore implements IVectorStore {
     }
 
     for (let i = 0; i < tools.length; i++) {
-      this.vectors.push({
-        tool: tools[i],
-        embedding: embeddings[i],
-      });
+      const existingIndex = this.vectors.findIndex((v) => v.tool.name === tools[i].name);
+      const record = { tool: tools[i], embedding: embeddings[i] };
+      if (existingIndex >= 0) {
+        this.vectors[existingIndex] = record; // Upsert
+      } else {
+        this.vectors.push(record);
+      }
     }
   }
 
@@ -63,10 +66,15 @@ export class VectorStore implements IVectorStore {
     }
 
     const content = readFileSync(this.storePath, 'utf-8');
-    const data: VectorStoreData = JSON.parse(content);
-
-    this.metadata = data.metadata || null;
-    this.vectors = data.vectors || data as any;
+    try {
+      const data: VectorStoreData = JSON.parse(content);
+      this.metadata = data.metadata || null;
+      this.vectors = data.vectors || data as any;
+    } catch (error) {
+      console.warn(`Warning: Failed to parse vector store at ${this.storePath}. Initializing empty store.`);
+      this.vectors = [];
+      this.metadata = null;
+    }
   }
 
   async save(): Promise<void> {

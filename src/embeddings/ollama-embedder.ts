@@ -16,17 +16,28 @@ export class OllamaEmbedder implements IEmbedder {
   }
 
   async embed(text: string): Promise<number[]> {
-    const response = await fetch(`${this.baseUrl}/api/embeddings`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: this.model,
-        prompt: text,
-      }),
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
 
-    if (!response.ok) {
-      throw new Error(`Ollama embedding failed: ${response.statusText}`);
+    let response: Response;
+    try {
+      response = await fetch(`${this.baseUrl}/api/embeddings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: this.model,
+          prompt: text,
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (!response.ok) {
+        throw new Error(`Ollama embedding failed: ${response.statusText}`);
+      }
+    } catch (error: any) {
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') throw new Error(`Ollama embedding timed out after 30s at ${this.baseUrl}`);
+      throw new Error(`Ollama connection failed at ${this.baseUrl}. Ensure Ollama is running. Details: ${error.message}`);
     }
 
     const data = await response.json();

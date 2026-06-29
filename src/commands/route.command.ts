@@ -12,6 +12,8 @@ export function createRouteCommand(): Command {
     .option('-s, --store <path>', 'Path to vector store', 'vector-store.json')
     .option('-m, --model <name>', 'Ollama embedding model (must match index)', 'nomic-embed-text:latest')
     .option('-d, --dimensions <number>', 'Embedding dimensions (must match index)', '768')
+    .option('-u, --url <url>', 'Ollama API URL', process.env.OLLAMA_HOST || 'http://localhost:11434')
+    .option('-j, --json', 'Output results as JSON')
     .action(async (query: string, options) => {
       const k = parseInt(options.topK, 10);
       const dimensions = parseInt(options.dimensions, 10);
@@ -26,7 +28,7 @@ export function createRouteCommand(): Command {
         process.exit(1);
       }
 
-      const embedder = new OllamaEmbedder('http://localhost:11434', options.model, dimensions);
+      const embedder = new OllamaEmbedder(options.url, options.model, dimensions);
       const store = new VectorStore(options.store);
 
       await store.load();
@@ -52,18 +54,22 @@ export function createRouteCommand(): Command {
         console.warn('Warning: Vector store has no metadata. Cannot validate model/dimensions compatibility.');
       }
 
-      console.log(`Embedding query: "${query}"`);
+      if (!options.json) console.log(`Embedding query: "${query}"`);
       const queryEmbedding = await embedder.embed(query);
 
-      console.log(`Searching top ${k} tools...`);
+      if (!options.json) console.log(`Searching top ${k} tools...`);
       const results = await store.search(queryEmbedding, k);
 
-      console.log('\nTop relevant tools:');
-      results.forEach((tool, index) => {
-        console.log(`${index + 1}. ${tool.name}`);
-        console.log(`   Description: ${tool.description}`);
-        console.log('');
-      });
+      if (options.json) {
+        console.log(JSON.stringify(results, null, 2));
+      } else {
+        console.log('\nTop relevant tools:');
+        results.forEach((tool, index) => {
+          console.log(`${index + 1}. ${tool.name}`);
+          console.log(`   Description: ${tool.description}`);
+          console.log('');
+        });
+      }
     });
 
   return command;

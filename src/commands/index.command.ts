@@ -12,6 +12,7 @@ export function createIndexCommand(): Command {
     .option('-o, --output <path>', 'Output path for vector store', 'vector-store.json')
     .option('-m, --model <name>', 'Ollama embedding model', 'nomic-embed-text:latest')
     .option('-d, --dimensions <number>', 'Embedding dimensions (supports Matryoshka truncation)', '768')
+    .option('-u, --url <url>', 'Ollama API URL', process.env.OLLAMA_HOST || 'http://localhost:11434')
     .action(async (toolsDir: string, options) => {
       const dimensions = parseInt(options.dimensions, 10);
 
@@ -24,17 +25,22 @@ export function createIndexCommand(): Command {
       const tools = ToolLoader.loadFromDirectory(toolsDir);
       console.log(`Loaded ${tools.length} tools`);
 
-      const embedder = new OllamaEmbedder('http://localhost:11434', options.model, dimensions);
+      const embedder = new OllamaEmbedder(options.url, options.model, dimensions);
       const store = new VectorStore(options.output);
 
       console.log(`Generating embeddings (model: ${options.model}, dimensions: ${dimensions})...`);
       const embeddings: number[][] = [];
+      const batchSize = 5;
 
-      for (const tool of tools) {
-        const text = `${tool.name} ${tool.description}`;
-        const embedding = await embedder.embed(text);
-        embeddings.push(embedding);
-        console.log(`  Embedded: ${tool.name}`);
+      for (let i = 0; i < tools.length; i += batchSize) {
+        const batch = tools.slice(i, i + batchSize);
+        const batchEmbeddings = await Promise.all(batch.map(async (tool) => {
+          const text = `${tool.name} ${tool.description}`;
+          const embedding = await embedder.embed(text);
+          console.log(`  Embedded: ${tool.name}`);
+          return embedding;
+        }));
+        embeddings.push(...batchEmbeddings);
       }
 
       store.setMetadata({

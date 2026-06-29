@@ -11,8 +11,8 @@ export class ToolLoader {
       const content = readFileSync(join(dirPath, file), 'utf-8');
       const tool = JSON.parse(content) as Tool;
 
-      if (!tool.name || !tool.description) {
-        console.warn(`Skipping invalid tool file: ${file}`);
+      if (!tool.name || !tool.description || typeof tool.parameters !== 'object' || tool.parameters === null) {
+        console.warn(`Skipping invalid tool file (missing name, description, or valid parameters): ${file}`);
         continue;
       }
 
