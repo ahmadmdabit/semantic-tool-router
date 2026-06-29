@@ -9,7 +9,7 @@ export function createRouteCommand(): Command {
     .description('Find top-K relevant tools for a query')
     .argument('<query>', 'User query')
     .option('-k, --top-k <number>', 'Number of tools to return', '5')
-    .option('-s, --store <path>', 'Path to vector store', 'vector-store.json')
+    .option('-s, --store <path>', 'Path to vector store', 'vector-store.jsonl')
     .option('-m, --model <name>', 'Ollama embedding model (must match index)', 'nomic-embed-text:latest')
     .option('-d, --dimensions <number>', 'Embedding dimensions (must match index)', '768')
     .option('-u, --url <url>', 'Ollama API URL', process.env.OLLAMA_HOST || 'http://localhost:11434')

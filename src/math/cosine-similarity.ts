@@ -5,7 +5,7 @@ import { norm } from './norm.js';
  * Calculate cosine similarity between two vectors.
  * Uses adapted mathjs logic for dot product and L2 norm.
  */
-export function cosineSimilarity(a: number[], b: number[]): number {
+export function cosineSimilarity(a: Float32Array | number[], b: Float32Array | number[]): number {
   const magA = norm(a);
   const magB = norm(b);
 

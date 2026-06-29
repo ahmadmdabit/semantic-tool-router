@@ -1,15 +1,11 @@
 import { writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { Tool, IVectorStore, VectorStoreMetadata } from '../types.js';
-import { cosineSimilarity } from '../math/cosine-similarity.js';
+import { dot } from '../math/dot.js';
+import { normalize } from '../math/norm.js';
 
 interface StoredVector {
   tool: Tool;
-  embedding: number[];
-}
-
-interface VectorStoreData {
-  metadata: VectorStoreMetadata | null;
-  vectors: StoredVector[];
+  embedding: Float32Array;
 }
 
 export class VectorStore implements IVectorStore {
@@ -17,7 +13,7 @@ export class VectorStore implements IVectorStore {
   private metadata: VectorStoreMetadata | null = null;
   private readonly storePath: string;
 
-  constructor(storePath = 'vector-store.json') {
+  constructor(storePath = 'vector-store.jsonl') {
     this.storePath = storePath;
   }
 
@@ -35,10 +31,11 @@ export class VectorStore implements IVectorStore {
     }
 
     for (let i = 0; i < tools.length; i++) {
+      const normEmbedding = normalize(embeddings[i]);
       const existingIndex = this.vectors.findIndex((v) => v.tool.name === tools[i].name);
-      const record = { tool: tools[i], embedding: embeddings[i] };
+      const record = { tool: tools[i], embedding: normEmbedding };
       if (existingIndex >= 0) {
-        this.vectors[existingIndex] = record; // Upsert
+        this.vectors[existingIndex] = record;
       } else {
         this.vectors.push(record);
       }
@@ -48,9 +45,10 @@ export class VectorStore implements IVectorStore {
   async search(queryEmbedding: number[], k: number): Promise<Tool[]> {
     if (this.vectors.length === 0) return [];
 
+    const normQuery = normalize(queryEmbedding);
     const scores = this.vectors.map((stored) => ({
       tool: stored.tool,
-      score: cosineSimilarity(queryEmbedding, stored.embedding),
+      score: dot(normQuery, stored.embedding),
     }));
 
     scores.sort((a, b) => b.score - a.score);
@@ -66,23 +64,43 @@ export class VectorStore implements IVectorStore {
     }
 
     const content = readFileSync(this.storePath, 'utf-8');
-    try {
-      const data: VectorStoreData = JSON.parse(content);
-      this.metadata = data.metadata || null;
-      this.vectors = data.vectors || data as any;
-    } catch (error) {
-      console.warn(`Warning: Failed to parse vector store at ${this.storePath}. Initializing empty store.`);
-      this.vectors = [];
-      this.metadata = null;
+    const lines = content.split(/\r?\n/);
+    this.vectors = [];
+    this.metadata = null;
+
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const entry = JSON.parse(line);
+        if (entry.type === 'metadata') {
+          this.metadata = entry.data;
+        } else if (entry.type === 'vector') {
+          this.vectors.push({
+            tool: entry.data.tool,
+            embedding: new Float32Array(entry.data.embedding),
+          });
+        }
+      } catch (error) {
+        console.warn(`Warning: Failed to parse line in vector store. Skipping line.`);
+      }
     }
   }
 
   async save(): Promise<void> {
-    const data: VectorStoreData = {
-      metadata: this.metadata,
-      vectors: this.vectors,
-    };
-    writeFileSync(this.storePath, JSON.stringify(data, null, 2));
+    const lines: string[] = [];
+    if (this.metadata) {
+      lines.push(JSON.stringify({ type: 'metadata', data: this.metadata }));
+    }
+    for (const stored of this.vectors) {
+      lines.push(JSON.stringify({
+        type: 'vector',
+        data: {
+          tool: stored.tool,
+          embedding: Array.from(stored.embedding),
+        }
+      }));
+    }
+    writeFileSync(this.storePath, lines.join('\n') + '\n');
   }
 
   size(): number {

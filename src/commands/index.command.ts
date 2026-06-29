@@ -9,7 +9,7 @@ export function createIndexCommand(): Command {
   command
     .description('Build vector index from tool catalog')
     .argument('<toolsDir>', 'Directory containing tool JSON files')
-    .option('-o, --output <path>', 'Output path for vector store', 'vector-store.json')
+    .option('-o, --output <path>', 'Output path for vector store', 'vector-store.jsonl')
     .option('-m, --model <name>', 'Ollama embedding model', 'nomic-embed-text:latest')
     .option('-d, --dimensions <number>', 'Embedding dimensions (supports Matryoshka truncation)', '768')
     .option('-u, --url <url>', 'Ollama API URL', process.env.OLLAMA_HOST || 'http://localhost:11434')
