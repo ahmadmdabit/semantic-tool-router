@@ -17,7 +17,9 @@ export function norm(vec: Float32Array | number[]): number {
  * Normalize a vector to unit length and return as a Float32Array.
  */
 export function normalize(vec: Float32Array | number[]): Float32Array {
-  const arr = vec instanceof Float32Array ? vec : new Float32Array(vec);
+  // Always copy: callers (VectorStore) may reuse their input arrays, and
+  // in-place mutation would corrupt test fixtures and indexed embeddings.
+  const arr = new Float32Array(vec);
   const mag = norm(arr);
   if (mag > 0) {
     const len = arr.length;

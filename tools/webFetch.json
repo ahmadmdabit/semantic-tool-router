@@ -15,7 +15,10 @@
   "whenNotToUse": [
     "The content is a local file. Use readFile instead.",
     "The content is reached via shell/network tooling outside HTTP. Use runCommand instead.",
-    "The URL is private or requires auth the tool cannot supply — the fetch will fail."
+    "The URL is private or requires auth the tool cannot supply — the fetch will fail.",
+    "The user wants to find or list local files matching a name or extension pattern (e.g. *.ts, *.md, *.json). Use glob instead.",
+    "The user wants to search inside local file contents for a keyword or regex. Use grep instead.",
+    "The query mentions Markdown but the target is a local file, not a web page — webFetch only returns Markdown by stripping HTML tags from a fetched URL."
   ],
   "triggers": [
     "fetch",
@@ -28,12 +31,17 @@
     "http",
     "https",
     "url",
-    "api response",
-    "json response",
-    "html",
-    "markdown",
+    "http url",
+    "https url",
     "scrape",
-    "retrieve url"
+    "scrape the",
+    "retrieve url",
+    "fetch the webpage",
+    "fetch the page",
+    "get the latest",
+    "release notes",
+    "latest release",
+    "fetch the latest"
   ],
   "boosts": [],
   "parameters": {

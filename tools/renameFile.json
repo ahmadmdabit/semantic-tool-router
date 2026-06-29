@@ -6,10 +6,11 @@
     "Rename src/index.tsx to src/main.tsx",
     "Change the file name of docs/old.md to docs/new.md"
   ],
-"whenToUse": [
+  "whenToUse": [
     "The user wants to change a file's path but keep its location and contents intact.",
     "Both source and target sit inside the same base directory (no cross-directory rename).",
-    "The new path must not already exist (the command fails on collision instead of overwriting)."
+    "The new path must not already exist (the command fails on collision instead of overwriting).",
+    "The user wants to change a file's extension (e.g. .js to .ts) — that is a rename, not an edit."
   ],
   "whenNotToUse": [
     "The user wants to move the file to a different parent directory. Use moveFile instead.",
@@ -19,13 +20,22 @@
   "triggers": [
     "rename file",
     "rename the file",
+    "rename from",
+    "rename to",
+    "rename src",
+    "rename old",
+    "rename new",
     "change file name",
     "change the file name",
+    "change file extension",
+    "change the file extension",
+    "change extension",
+    "rename extension",
     "file rename",
-    "rename to",
-    "rename from"
+    "rename",
+    "renaming"
   ],
-  "boosts": ["moveFile", "renameDirectory"],
+  "boosts": ["renameDirectory"],
   "parameters": {
     "type": "object",
     "properties": {

@@ -11,17 +11,24 @@
     "typecheck": "tsc --noEmit",
     "build": "vite build",
     "start": "node dist/cli.js",
-    "dev": "vite-node src/cli.ts"
+    "dev": "vite-node src/cli.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "bench": "vitest bench --run --config vitest.bench.config.ts",
+    "bench:watch": "vitest bench --config vitest.bench.config.ts"
   },
   "dependencies": {
     "commander": "^12.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.20.0",
+    "@vitest/coverage-v8": "^4.1.9",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3",
     "vite": "^8.1.0",
-    "vite-node": "^6.0.0"
+    "vite-node": "^6.0.0",
+    "vitest": "^4.1.9"
   },
   "packageManager": "yarn@4.17.0"
 }

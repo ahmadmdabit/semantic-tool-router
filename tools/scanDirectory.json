@@ -7,10 +7,11 @@
     "Walk the docs directory and return timestamps and content",
     "Index every text file under lib/"
   ],
-"whenToUse": [
+  "whenToUse": [
     "The user needs both the names of files and their contents in one pass.",
     "The caller will filter, embed, or compare file payloads downstream.",
-    "A context-window budget (maxChars) bounds the result for an LLM prompt."
+    "A context-window budget (maxChars) bounds the result for an LLM prompt.",
+    "The user wants a recursive directory tree or the full nested structure of a directory (e.g. \"show the directory structure recursively\")."
   ],
   "whenNotToUse": [
     "The user only needs names or directory entries. Use listDirectory instead (cheaper, no content).",
@@ -30,10 +31,16 @@
     "crawl the directory",
     "directory walk",
     "directory scan",
+    "directory tree",
+    "directory structure",
+    "recursive structure",
+    "nested structure",
+    "recursive directory",
+    "full directory",
     "file payloads",
     "timestamps and content"
   ],
-  "boosts": ["listDirectory"],
+  "boosts": [],
   "parameters": {
     "type": "object",
     "properties": {

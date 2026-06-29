@@ -15,7 +15,8 @@
   "whenNotToUse": [
     "The user wants to match files by name pattern. Use glob instead.",
     "The user wants file contents or token-level payloads. Use scanDirectory or readFile instead.",
-    "The user wants to move or rename the directory. Use moveDirectory / renameDirectory instead."
+    "The user wants to move or rename the directory. Use moveDirectory / renameDirectory instead.",
+    "The user wants a recursive directory tree or the full nested structure of a directory (e.g. \"the directory structure recursively\"). Use scanDirectory instead — listDirectory only shows immediate children."
   ],
   "triggers": [
     "list directory",

@@ -67,6 +67,11 @@ interface Rule {
   matchDescription?: RegExp;
   // Stable identifier for debug output.
   reason: string;
+  // Length of the trigger string that produced this rule. Dynamic rules with
+  // longer triggers are more specific; when several dynamic rules match the
+  // same query we pick the longest (maximum-specificity) winner instead of
+  // the first in catalog order. Baselines set this to 0.
+  triggerLength: number;
 }
 
 import { Tool } from '../types.js';
@@ -81,73 +86,92 @@ const BaselineRules: Rule[] = [
     pattern: 'glob',
     match: /[*?]|\*\*|\[[^\]]*\]|\{[^}]*\}/,
     boostTools: [],
-    matchNames: /\b(glob|globber|wildcard|pattern)\b/i,
+    // NOTE: trailing \b removed from matchNames so camelCase tool names like
+    // `globFiles` or `wildcardMatch` still match. Descriptions are natural
+    // language (real word boundaries), so matchDescription keeps \b.
+    matchNames: /\b(glob|globber|wildcard|pattern)/i,
     matchDescription: /\b(glob|wildcard|pattern|filename pattern|file pattern)\b/i,
     reason: 'builtin:glob',
+    triggerLength: 0,
   },
   {
     pattern: 'write',
-    match: /\b(write|create|overwrite|new\s+file)\b/,
+    match: /\b(write|create|overwrite|new\s+file|make\s+a|make|generate\s+a)\b/,
     boostTools: [],
-    matchNames: /\b(write|create|generate|save)\b/i,
+    matchNames: /\b(write|create|generate|save)/i,
     matchDescription: /\b(write|create|overwrite|generate|save)\b/i,
     reason: 'builtin:write',
+    triggerLength: 0,
   },
   {
     pattern: 'edit',
     match: /\b(edit|modify|change|replace|patch|delete\s+file)\b/,
     boostTools: [],
-    matchNames: /\b(edit|modify|patch|update|replace)\b/i,
+    matchNames: /\b(edit|modify|patch|update|replace)/i,
     matchDescription: /\b(edit|modify|change|replace|patch|update)\b/i,
     reason: 'builtin:edit',
+    triggerLength: 0,
   },
   {
     pattern: 'move',
     match: /\b(move|relocate|transfer|shift)\b.*(?:\.+[\\/]|\/)|(\bfrom\b|\bto\b).*\//,
     boostTools: [],
-    matchNames: /\b(move|relocate|transfer|shift)\b/i,
+    matchNames: /\b(move|relocate|transfer|shift)/i,
     matchDescription: /\b(move|relocate|transfer|shift)\b/i,
     reason: 'builtin:move',
+    triggerLength: 0,
   },
   {
     pattern: 'rename',
     match: /\b(rename|migrate)\b/,
     boostTools: [],
-    matchNames: /\b(rename|renaming)\b/i,
+    matchNames: /\b(rename|renaming)/i,
     matchDescription: /\b(rename|renaming)\b/i,
     reason: 'builtin:rename',
+    triggerLength: 0,
   },
   {
     pattern: 'search',
-    match: /\b(grep|regex|search\s+for|find\s+keyword|match\s+pattern)\b/,
+    match: /\b(grep|regex|search\s+for|find\s+keyword|match\s+pattern|find\s+every|look\s+for\s+the\s+string|look\s+for)\b/,
     boostTools: [],
-    matchNames: /\b(grep|search|find|locate|lookup|query|match)\b/i,
-    matchDescription: /\b(search|grep|regex|find|locate|match|query|lookup)\b/i,
+    // matchNames: kept tight — only tools whose NAME is genuinely search-family.
+    // Generic verbs like "find"/"match"/"query" appear in many non-search tool
+    // names (e.g. "findFiles") and cause cross-contamination.
+    matchNames: /\b(grep|search|locate|lookup)/i,
+    // matchDescription: "regex" and "search" are the reliable signals.
+    // "find"/"match"/"query" are too broad — editFile's description mentions
+    // "Regex" (it supports regex replacement), which wrongly pulled editFile
+    // into the search cluster for queries like "find every place where...".
+    matchDescription: /\b(search|grep|locate|lookup)\b/i,
     reason: 'builtin:search',
+    triggerLength: 0,
   },
   {
     pattern: 'read',
-    match: /\b(read|show\s+(?:me\s+)?(?:the\s+)?(?:content|contents|text|body)|print\s+(?:the\s+)?(?:file|contents?)|open\s+(?:the\s+)?(?:file|document))\b/,
+    match: /\b(read|show\s+(?:me\s+)?(?:the\s+)?(?:content|contents|text|body)|print\s+(?:the\s+)?(?:file|contents?)|open\s+(?:the\s+)?(?:file|document)|open\s+and\s+display|display\s+(?:the\s+)?(?:file|document|contents?))\b/,
     boostTools: [],
-    matchNames: /\b(read|open|show|print|display|cat|head|tail|dump)\b/i,
+    matchNames: /\b(read|open|show|print|display|cat|head|tail|dump)/i,
     matchDescription: /\b(read|show|print|display|open|view|dump)\b/i,
     reason: 'builtin:read',
+    triggerLength: 0,
   },
   {
     pattern: 'list',
     match: /\b(list|enumerate|ls|directory listing|folder listing)\b/,
     boostTools: [],
-    matchNames: /\b(list|enumerate|ls|dir)\b/i,
+    matchNames: /\b(list|enumerate|ls|dir)/i,
     matchDescription: /\b(list|enumerate|directory listing|folder listing)\b/i,
     reason: 'builtin:list',
+    triggerLength: 0,
   },
   {
     pattern: 'scan',
     match: /\b(scan|walk|traverse|crawl|catalog|index)\b/,
     boostTools: [],
-    matchNames: /\b(scan|walk|traverse|crawl|catalog|index)\b/i,
+    matchNames: /\b(scan|walk|traverse|crawl|catalog|index)/i,
     matchDescription: /\b(scan|walk|traverse|crawl|catalog|index)\b/i,
     reason: 'builtin:scan',
+    triggerLength: 0,
   },
 ];
 
@@ -169,6 +193,7 @@ function buildDynamicRules(tools: Tool[]): Rule[] {
         match: pattern,
         boostTools,
         reason: `dynamic:${tool.name}:${raw}`,
+        triggerLength: raw.length,
       });
     }
   }
@@ -217,43 +242,59 @@ export function resetIntentCache(): void {
   cachedRules = null;
 }
 
-// Main entry point. `tools` is the live catalog from the store. Returns the
-// first matching rule's hints (dynamic wins over builtin), or a no-op hint
-// set when nothing fires.
+// Resolves a matching rule into the set of tools to boost, or null if the
+// rule has no effect against this catalog (builtin baselines with no matching
+// tools produce an empty boost set and are skipped).
+function resolveBoostTools(rule: Rule, tools: Tool[]): Set<string> | null {
+  if (rule.boostTools.length > 0) {
+    return new Set(rule.boostTools);
+  }
+  const boosted = new Set<string>();
+  const nameRe = rule.matchNames;
+  const descRe = rule.matchDescription;
+  for (const tool of tools) {
+    if (nameRe && nameRe.test(tool.name)) boosted.add(tool.name);
+    if (descRe && descRe.test(tool.description)) boosted.add(tool.name);
+  }
+  return boosted.size > 0 ? boosted : null;
+}
+
+// Main entry point. `tools` is the live catalog from the store. Among all
+// rules that match the query and produce a non-empty boost set, the one with
+// the LONGEST trigger wins (maximum-specificity ordering). This prevents an
+// early-catalog tool with a broad trigger ("change the file") from shadowing a
+// later tool with a more specific trigger ("change the file extension") for
+// the same query. Builtin baselines (triggerLength 0) only fire when no
+// dynamic rule matched.
 export function detectIntent(query: string, tools: Tool[]): IntentHints {
   const q = query.toLowerCase();
   const rules = buildRuleTable(tools);
 
+  let bestRule: Rule | null = null;
+  let bestBoost: Set<string> | null = null;
+
   for (const rule of rules) {
     if (!rule.match.test(q)) continue;
-
-    let boostTools: Set<string>;
-    if (rule.boostTools.length > 0) {
-      // Dynamic rule: boost the declared tools.
-      boostTools = new Set(rule.boostTools);
-    } else {
-      // Builtin baseline: walk the catalog and boost any tool whose name or
-      // description matches the verb's shape.
-      boostTools = new Set<string>();
-      const nameRe = rule.matchNames;
-      const descRe = rule.matchDescription;
-      for (const tool of tools) {
-        if (nameRe && nameRe.test(tool.name)) boostTools.add(tool.name);
-        if (descRe && descRe.test(tool.description)) boostTools.add(tool.name);
-      }
+    const boost = resolveBoostTools(rule, tools);
+    if (!boost) continue;
+    // Prefer the rule with the longest trigger. On a tie, the first in
+    // catalog order wins (stable).
+    if (!bestRule || rule.triggerLength > bestRule.triggerLength) {
+      bestRule = rule;
+      bestBoost = boost;
     }
-
-    if (boostTools.size === 0) continue;
-
-    return {
-      pattern: rule.pattern,
-      boostTools,
-      boost: DefaultBoost,
-      reason: rule.reason,
-    };
   }
 
-  return { pattern: 'none', boostTools: new Set(), boost: 1 };
+  if (!bestRule) {
+    return { pattern: 'none', boostTools: new Set(), boost: 1 };
+  }
+
+  return {
+    pattern: bestRule.pattern,
+    boostTools: bestBoost!,
+    boost: DefaultBoost,
+    reason: bestRule.reason,
+  };
 }
 
 // Kept for backward-compat with any caller that still uses the no-catalog

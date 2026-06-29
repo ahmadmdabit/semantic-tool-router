@@ -9,7 +9,14 @@ export class ToolLoader {
 
     for (const file of files) {
       const content = readFileSync(join(dirPath, file), 'utf-8');
-      const tool = JSON.parse(content) as Tool;
+
+      let tool: Tool;
+      try {
+        tool = JSON.parse(content) as Tool;
+      } catch {
+        console.warn(`Skipping malformed tool file (invalid JSON): ${file}`);
+        continue;
+      }
 
       if (!tool.name || !tool.description || typeof tool.parameters !== 'object' || tool.parameters === null) {
         console.warn(`Skipping invalid tool file (missing name, description, or valid parameters): ${file}`);

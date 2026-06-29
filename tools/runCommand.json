@@ -22,6 +22,8 @@
     "run the command",
     "execute command",
     "execute the command",
+    "execute the build",
+    "execute the build script",
     "shell command",
     "terminal command",
     "cmd",
@@ -35,7 +37,9 @@
     "dotnet",
     "install dependency",
     "build the project",
-    "run script"
+    "build script",
+    "run script",
+    "run the build"
   ],
   "boosts": [],
   "parameters": {

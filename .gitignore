@@ -2,5 +2,7 @@
 dist/
 build/
 node_modules
+coverage/
 
 vector-store.jsonl
+*.log

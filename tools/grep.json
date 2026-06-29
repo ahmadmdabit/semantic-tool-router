@@ -5,7 +5,11 @@
   "examples": [
     "Find every TODO comment in src/**/*.ts",
     "Grep for fetch( calls inside lib/",
-    "Search for the pattern 'export function' in src/main.ts"
+    "Search for the pattern 'export function' in src/main.ts",
+    "Search for the string TODO in markdown files",
+    "Find every place where a function or symbol is called",
+    "Where is this helper used across the project",
+    "Search for 'password' in every config file"
   ],
 "whenToUse": [
     "The user has a regex or literal string and wants the matching lines across files.",

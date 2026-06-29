@@ -77,7 +77,7 @@ The router sits between the user and the LLM: offline, it indexes the tool catal
 - **Just-in-Time Context Injection**: Dynamically injects only the top-K most relevant tool schemas per request.
 - **Multi-Signal Ranking**: Blends a dense embedding cosine pass, a structural/intent pre-classifier, and stopword-aware keyword overlap via Reciprocal-Rank Fusion (RRF) so ambiguous queries resolve to the right tool instead of the one whose description wins a token-collision tie.
 - **Tool Boundary Vocabulary**: Each tool can declare positive (`whenToUse`) and negative (`whenNotToUse`) inclusion criteria inspired by the Claude Skills Spec. These boundaries are embedded alongside the description, which is what lets the ranker distinguish a query like "List all \*.ts files" (glob) from "read package.json" (readFile) despite both sharing the token "file".
-- **Data-Driven Structural Detector (S2)**: Each tool can declare `triggers` (query fragments that should boost it) and `boosts` (other tools to boost alongside it). The intent detector compiles these into a dynamic rule table at runtime — no hardcoded tool names in source. A brand-new tool added to the catalog gets S2 coverage automatically from its `triggers`, or from builtin baseline regexes that match on name/description shape.
+- **Data-Driven Structural Detector (S2)**: Each tool can declare `triggers` (query fragments that should boost it) and `boosts` (other tools to boost alongside it). The intent detector compiles these into a dynamic rule table at runtime — no hardcoded tool names in source. A brand-new tool added to the catalog gets S2 coverage automatically from its `triggers`, or from builtin baseline regexes that match on name/description shape. When several dynamic rules match the same query, the one with the **longest (most specific) trigger** wins rather than the first in catalog order — so a broad trigger like `"change the file"` does not shadow a precise one like `"change the file extension"`.
 - **Score Visibility & Confidence Floor**: The `route` command prints each tool's composite score, and a new `--threshold` flag drops tools whose score falls below a floor so callers can detect "no confident match" instead of taking the least-bad one.
 - **Nomic Retrieval Prefixes**: Queries are embedded with `search_query:` and tool texts with `search_document:`, keeping nomic-embed-text v1.5+ embeddings on-manifold for retrieval.
 - **Token Reduction**: Reduces tool context tokens by up to 99%.
@@ -160,16 +160,17 @@ Top relevant tools:
 
 ## Technology Decisions
 
-| Area            | Choice                                           | Rationale                                                                                  |
-| --------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------ |
-| Language        | TypeScript (strict)                              | Type safety without complexity.                                                            |
-| CLI Framework   | `commander`                                      | Standard, minimal dependency.                                                              |
-| Embedding       | Ollama (`nomic-embed-text:latest`, configurable) | Local, specified embedding model.                                                          |
-| Vector Store    | In-memory + JSONL persistence                    | Simple, zero external database dependencies.                                               |
-| Similarity      | Cosine similarity (`cosine-similarity.ts`)       | Dedicated, zero-dependency module with a zero-norm guard; consumed by `VectorStore.search` |
-| Ranking         | Reciprocal-Rank Fusion (RRF) over 3 signals      | Robust to heterogeneous signal magnitudes; lets dense, structural, and lexical cues vote.  |
-| Package Manager | Yarn 4                                           | Standard ecosystem, deterministic lockfile.                                                |
-| Embedding Dims  | 768 default (configurable via `--dimensions`)    | Matryoshka truncation for flexible performance.                                            |
+| Area            | Choice                                           | Rationale                                                                                                |
+| --------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| Language        | TypeScript (strict)                              | Type safety without complexity.                                                                          |
+| CLI Framework   | `commander`                                      | Standard, minimal dependency.                                                                            |
+| Embedding       | Ollama (`nomic-embed-text:latest`, configurable) | Local, specified embedding model.                                                                        |
+| Vector Store    | In-memory + JSONL persistence                    | Simple, zero external database dependencies.                                                             |
+| Similarity      | Cosine similarity (`cosine-similarity.ts`)       | Dedicated, zero-dependency module with a zero-norm guard; consumed by `VectorStore.search`               |
+| Ranking         | Reciprocal-Rank Fusion (RRF) over 3 signals      | Robust to heterogeneous signal magnitudes; lets dense, structural, and lexical cues vote.                |
+| Testing         | Vitest (unit + integration + stress)             | Zero-config ESM runner; unit/integration run offline, stress tier runs against the real embedding model. |
+| Package Manager | Yarn 4                                           | Standard ecosystem, deterministic lockfile.                                                              |
+| Embedding Dims  | 768 default (configurable via `--dimensions`)    | Matryoshka truncation for flexible performance.                                                          |
 
 ## Matryoshka Embeddings
 
@@ -206,12 +207,20 @@ semantic-tool-router/
 │   └── vector/
 │       └── vector-store.ts       # In-memory + persistence, boundary-aware boost
 ├── tools/                        # User-provided tool catalog (14 JSON files)
+├── tests/                        # vitest suite (unit + integration + stress)
+│   ├── unit/                     # Pure-function tests (no Ollama)
+│   ├── integration/              # Retriever tests (fake embedder)
+│   └── stress/                   # 48-query regression (real embedder)
 ├── dist/                         # Compiled JavaScript output (gitignored)
-├── vector-store.jsonl            # Generated index (should be gitignored)
+├── vector-store.jsonl            # Generated index (gitignored)
 ├── package.json
 ├── tsconfig.json
+├── vitest.config.ts              # Vitest runner config
+├── vitest.bench.config.ts        # Vitest benchmark config (separate pool)
 ├── .yarnrc.yml
 ├── yarn.lock
+├── test-routes.cmd               # CLI smoke runner (writes test-routes.log)
+├── test-routes-stop.cmd          # Graceful-stop trigger for the smoke runner
 └── README.md
 ```
 
@@ -581,6 +590,28 @@ For development without building:
 yarn dev route "List all the files with *.ts"
 ```
 
+## Testing
+
+The project ships with a vitest suite of **114 tests** across unit, integration, and stress tiers. Unit and integration tests run without any external service. The stress tier uses the real Ollama embedder and exercises the full pipeline end-to-end, so it requires a running Ollama with `nomic-embed-text:latest` pulled and a fresh index (`yarn start index ./tools`).
+
+```bash
+yarn test                       # full suite (114 tests, ~15s with Ollama online)
+yarn test:watch                 # interactive watch mode
+yarn vitest run tests/unit tests/integration   # skip stress (no Ollama needed)
+```
+
+### Layout
+
+| Tier        | Directory            | What it covers                                                                                                                                           | Needs Ollama? |
+| ----------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| Unit        | `tests/unit/`        | Pure functions: `dot`, `norm`, `normalize`, `cosineSimilarity`; the structural intent detector rules; keyword-overlap tokenizer; in-memory `VectorStore` | No            |
+| Integration | `tests/integration/` | `retrieve()` end-to-end ranking with a deterministic fake embedder (no model dependency)                                                                 | No            |
+| Stress      | `tests/stress/`      | 48-query regression suite ported from `test-routes.cmd`, asserting the expected #1 tool per query and a score floor for true negatives                   | Yes           |
+
+### Continuous regression
+
+`test-routes.cmd` remains as a CLI-side smoke runner that writes a timestamped `test-routes.log`. The vitest stress spec (`tests/stress/stress.spec.ts`) is the CI-facing equivalent. Both should be run after any catalog change — the assertions are the regression guard that documents the router's actual behavior. Known routing ambiguities (where sibling tools share vocabulary and the correct answer depends on authoring choices) are annotated inline with the reason they resolve as they do.
+
 ## Timeline Achievements
 
 | Date       | Commit        | Achievement                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
@@ -588,7 +619,8 @@ yarn dev route "List all the files with *.ts"
 | 2026-06-29 | `05d5bcf`     | **Initial scaffold** — Commander CLI with `index` and `route` subcommands; Ollama embedder; in-memory vector store with JSON persistence; 13 tool schemas covering file, directory, search, web, execution, and skill operations.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | 2026-06-29 | `fe603a8`     | **Runtime hardening** — upsert-by-name on re-index; corrupt-store fallback; 30s AbortController timeout on embedder; tool-schema validation; batched embedding (chunk size 5); `--url` and `--json` flags on both commands.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | 2026-06-29 | `c9eaafa`     | **JSONL persistence + normalized Float32Array embeddings** — switched store from single-JSON to JSONL (one record per line); pre-normalize embeddings on insertion so dot product equals cosine similarity; added `normalize()` to math/norm.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| 2026-06-29 | (this branch) | **Retrieval rewrite: multi-signal RRF + boundary vocabulary + data-driven S2** — three-signal RRF fusion (dense cosine + structural intent detector + stopword-aware keyword overlap). Tool specs declare `whenToUse`/`whenNotToUse` (embedded with `NOT:` prefix), `triggers`/`boosts` (compiled into a dynamic two-layer rule table evaluated before builtin baselines). IntentPattern split into 9 granular verbs (`write`, `edit`, `move`, `rename`, `read`, `search`, `list`, `scan`). `search_query:`/`search_document:` nomic prefixes; `--threshold` filter; `--json` debug breakdown; `cosine-similarity.ts` consumed as single source of truth. **Verified**: `route "List all the files with *.ts"` → glob #1 at 0.98; `route "analyze the src folder"` with a synthetic `myAnalyzer` tool having `triggers:["analyze"]` ranked #1 with zero code change; all 14 tools hold #1 on their primary phrasing. |
+| 2026-06-29 | `3a6798c`     | **Retrieval rewrite: multi-signal RRF + boundary vocabulary + data-driven S2** — three-signal RRF fusion (dense cosine + structural intent detector + stopword-aware keyword overlap). Tool specs declare `whenToUse`/`whenNotToUse` (embedded with `NOT:` prefix), `triggers`/`boosts` (compiled into a dynamic two-layer rule table evaluated before builtin baselines). IntentPattern split into 9 granular verbs (`write`, `edit`, `move`, `rename`, `read`, `search`, `list`, `scan`). `search_query:`/`search_document:` nomic prefixes; `--threshold` filter; `--json` debug breakdown; `cosine-similarity.ts` consumed as single source of truth. **Verified**: `route "List all the files with *.ts"` → glob #1 at 0.98; `route "analyze the src folder"` with a synthetic `myAnalyzer` tool having `triggers:["analyze"]` ranked #1 with zero code change; all 14 tools hold #1 on their primary phrasing. |
+| 2026-06-30 | (this commit) | **Test harness + S2 specificity ordering + routing ambiguity fixes** — full vitest suite (114 tests: 46 unit + 20 integration + 48 stress). S2 detector reorders from first-match to **longest-trigger-wins** so broad triggers no longer shadow specific ones. Builtin baseline `matchNames` regexes drop trailing `\b` so camelCase tool names (`editFile`, `writeFile`) match. Search baseline tightened to stop cross-contaminating `editFile` into the search cluster. `normalize()` hardened to always copy (defensive against in-place mutation). `tool-loader` skips malformed JSON instead of throwing. 4 known routing ambiguities resolved via targeted catalog enrichment (extension-change → renameFile, recursive structure → scanDirectory, content-search phrasings → grep).                                                                                                                         |
 
 ## Quality Score Estimate Across the Change Timeline
 

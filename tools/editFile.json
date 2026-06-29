@@ -26,10 +26,18 @@
     "regex replacement",
     "modify file contents",
     "modify the file",
+    "modify the header",
+    "modify the title",
     "change text in",
+    "change the title",
+    "change the header",
+    "change the file",
     "update the file",
+    "update the version",
+    "update the field",
     "patch the file",
-    "rewrite the file"
+    "rewrite the file",
+    "replace all occurrences"
   ],
   "boosts": ["writeFile"],
   "parameters": {
