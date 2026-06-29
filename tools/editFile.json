@@ -1,0 +1,35 @@
+{
+  "name": "editFile",
+  "description": "Apply a targeted text replacement. Token-efficient. Supports exact string (default) or Regex (isRegex=true). Fails safely if 0 matches found.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "filePath": {
+        "type": "string",
+        "description": "Relative path to the target file"
+      },
+      "oldText": {
+        "type": "string",
+        "description": "Exact text snippet OR Regex pattern (if isRegex=true) to find"
+      },
+      "newText": {
+        "type": "string",
+        "description": "Replacement text. Supports $1, $2 captures if isRegex=true"
+      },
+      "replaceAll": {
+        "type": "boolean",
+        "description": "If true, replaces all exact matches. Default: false (fails safely on multiple exact matches). Ignored if isRegex=true (regex always replaces all)."
+      },
+      "isRegex": {
+        "type": "boolean",
+        "description": "Set to true if oldText is a Regex pattern. Enables bulk replacement and capture groups. Default: false."
+      }
+    },
+    "required": [
+      "filePath",
+      "oldText",
+      "newText"
+    ],
+    "additionalProperties": false
+  }
+}

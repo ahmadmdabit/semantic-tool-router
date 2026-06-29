@@ -1,0 +1,17 @@
+{
+  "name": "readFile",
+  "description": "Read the content of a text file. Path must be relative to scanned directory or absolute within allowed roots.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "filePath": {
+        "type": "string",
+        "description": "File path to read"
+      }
+    },
+    "required": [
+      "filePath"
+    ],
+    "additionalProperties": false
+  }
+}

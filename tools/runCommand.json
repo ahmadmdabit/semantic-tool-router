@@ -1,0 +1,47 @@
+{
+  "name": "runCommand",
+  "description": "Execute a safe, whitelisted cmd.exe command. Allowed: dir, echo, type.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "command": {
+        "type": "string",
+        "description": "cmd.exe command to run (whitelisted only)",
+        "enum": [
+          "dir",
+          "echo",
+          "type",
+          "npm",
+          "yarn",
+          "pnpm",
+          "bun",
+          "python",
+          "uv",
+          "pip",
+          "dotnet"
+        ]
+      },
+      "args": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Command arguments"
+      },
+      "timeout": {
+        "type": "integer",
+        "description": "Execution timeout",
+        "default": 60000
+      },
+      "maxBuffer": {
+        "type": "integer",
+        "description": "Max allowed buffer",
+        "default": 1048576
+      }
+    },
+    "required": [
+      "command"
+    ],
+    "additionalProperties": false
+  }
+}

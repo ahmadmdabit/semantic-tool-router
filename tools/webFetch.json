@@ -1,0 +1,26 @@
+{
+  "name": "webFetch",
+  "description": "Fetch content from a public URL. Returns raw HTML or a Markdown version.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "url": {
+        "type": "string",
+        "description": "Full HTTP/HTTPS URL to fetch"
+      },
+      "responseFormat": {
+        "type": "string",
+        "enum": [
+          "HTML",
+          "Markdown"
+        ],
+        "description": "Output format. Markdown strips tags and simplifies layout which is tokens efficient."
+      }
+    },
+    "required": [
+      "url",
+      "responseFormat"
+    ],
+    "additionalProperties": false
+  }
+}

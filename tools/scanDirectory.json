@@ -1,0 +1,23 @@
+{
+  "name": "scanDirectory",
+  "description": "Scan directory for text files; returns array of {timestamp, path, content, tokens} within context limits",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "dirPath": {
+        "type": "string",
+        "description": "Directory to scan (relative or absolute)"
+      },
+      "maxChars": {
+        "type": "integer",
+        "description": "Max characters to return",
+        "default": 200000
+      }
+    },
+    "required": [
+      "dirPath"
+    ],
+    "additionalProperties": false
+  },
+  "strict": true
+}

@@ -1,0 +1,22 @@
+{
+  "name": "renameDirectory",
+  "description": "Rename an existing directory to a new path within the base directory. Fails if source doesn't exist or target already exists.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "oldPath": {
+        "type": "string",
+        "description": "Current relative path of the directory to rename"
+      },
+      "newPath": {
+        "type": "string",
+        "description": "New relative path for the directory"
+      }
+    },
+    "required": [
+      "oldPath",
+      "newPath"
+    ],
+    "additionalProperties": false
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "moveFile",
+  "description": "Move a file to a new path. Automatically handles cross-device moves by copying then deleting the original.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "oldPath": {
+        "type": "string",
+        "description": "Current relative path of the file to move"
+      },
+      "newPath": {
+        "type": "string",
+        "description": "Destination relative path for the file"
+      }
+    },
+    "required": [
+      "oldPath",
+      "newPath"
+    ],
+    "additionalProperties": false
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "listDirectory",
+  "description": "List files and directories in a given path.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "dirPath": {
+        "type": "string",
+        "description": "Directory path to list"
+      }
+    },
+    "required": [
+      "dirPath"
+    ],
+    "additionalProperties": false
+  }
+}

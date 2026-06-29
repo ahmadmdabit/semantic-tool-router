@@ -1,0 +1,22 @@
+{
+  "name": "grep",
+  "description": "Search for a regex pattern within files. searchPath can be a file path or glob pattern (e.g., 'src/**/*.ts').",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "pattern": {
+        "type": "string",
+        "description": "Regex pattern to search for (case-insensitive)"
+      },
+      "searchPath": {
+        "type": "string",
+        "description": "File path or glob pattern to search within (e.g., 'config.json', 'src/**/*.ts')"
+      }
+    },
+    "required": [
+      "pattern",
+      "searchPath"
+    ],
+    "additionalProperties": false
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "glob",
+  "description": "Find files matching a glob pattern. The pattern embeds the path (e.g., 'src/**/*.ts', '*.json', 'docs/**/*.md').",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "pattern": {
+        "type": "string",
+        "description": "Glob pattern with optional path prefix (e.g., '*.ts', 'lib/**/*.js', 'tests/**/*.{test,spec}.ts')"
+      },
+      "baseDir": {
+        "type": "string",
+        "description": "Base directory to evaluate pattern from (defaults to '.')"
+      }
+    },
+    "required": [
+      "pattern"
+    ],
+    "additionalProperties": false
+  }
+}

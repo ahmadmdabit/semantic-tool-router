@@ -1,0 +1,21 @@
+{
+  "name": "useSkill",
+  "description": "Load a skill file (workflow, prompt template, script, or configuration) for the agent to apply. Returns the file content for immediate processing.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "filePath": {
+        "type": "string",
+        "description": "Relative path to the skill file (e.g., 'skills/data-analysis.md', 'workflows/export.ts', 'prompts/system-v2.txt')"
+      },
+      "baseDir": {
+        "type": "string",
+        "description": "Base directory to resolve the skill path against (defaults to '.')"
+      }
+    },
+    "required": [
+      "filePath"
+    ],
+    "additionalProperties": false
+  }
+}

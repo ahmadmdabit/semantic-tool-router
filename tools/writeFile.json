@@ -1,0 +1,22 @@
+{
+  "name": "writeFile",
+  "description": "Write content to a file. Use with caution; overwrites existing files.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "filePath": {
+        "type": "string",
+        "description": "File path to write"
+      },
+      "fileContent": {
+        "type": "string",
+        "description": "Content to write"
+      }
+    },
+    "required": [
+      "filePath",
+      "fileContent"
+    ],
+    "additionalProperties": false
+  }
+}

@@ -1,0 +1,6 @@
+.yarn
+dist/
+build/
+node_modules
+
+vector-store.json

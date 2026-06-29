@@ -1,0 +1,22 @@
+{
+  "name": "moveDirectory",
+  "description": "Move a directory and all its contents to a new path. Automatically handles cross-device moves by copying recursively then deleting the original.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "oldPath": {
+        "type": "string",
+        "description": "Current relative path of the directory to move"
+      },
+      "newPath": {
+        "type": "string",
+        "description": "Destination relative path for the directory"
+      }
+    },
+    "required": [
+      "oldPath",
+      "newPath"
+    ],
+    "additionalProperties": false
+  }
+}

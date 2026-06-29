@@ -1,0 +1,27 @@
+{
+  "name": "semantic-tool-router",
+  "version": "0.1.0",
+  "description": "Semantic Tool Router CLI - Pure TypeScript implementation",
+  "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "bin": "./dist/cli.js",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "vite build",
+    "start": "node dist/cli.js",
+    "dev": "vite-node src/cli.ts"
+  },
+  "dependencies": {
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3",
+    "vite": "^8.1.0",
+    "vite-node": "^6.0.0"
+  },
+  "packageManager": "yarn@4.17.0"
+}
