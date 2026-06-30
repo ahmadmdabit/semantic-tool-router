@@ -622,6 +622,44 @@ yarn bench:watch                # interactive benchmark watch mode
 | Regression  | `tests/regression/`  | 48-query regression suite asserting the expected #1 tool per query and a score floor for true negatives                                                                                                                                                                       | Yes           |
 | Benchmark   | `tests/benchmark/`   | 10 variants: latency at 14/50/200 tools + edge cases (empty catalog, k=1, k=50, threshold, intent-heavy, homogeneous, polarity)                                                                                                                                               | No            |
 
+### Coverage
+
+The v8 coverage report across all 10 test files (167 tests) exceeds the 90% floor on every metric:
+
+| Metric     | Coverage | Floor |
+| ---------- | -------- | ----- |
+| Statements | 97.86%   | 90%   |
+| Branches   | 93.46%   | 90%   |
+| Functions  | 98.30%   | 90%   |
+| Lines      | 98.63%   | 90%   |
+
+All source modules reach 100% statement/function/line coverage with three exceptions: `ollama-embedder.ts` (95.23% stmts, 66.66% funcs — uncalled error-path branches), `retriever.ts` (91.3% branches — edge-case guards), and `keyword-overlap.ts` (92.85% stmts, 86.84% branches — stopword Jaccard branches). The uncovered lines are documented in the v8 report at `yarn test:coverage`.
+
+### Benchmark Results
+
+Latency benchmarks using a deterministic mocked embedder (no Ollama dependency). Each variant times `retrieve()` against an in-memory store with N synthetic tools:
+
+| Variant                                        |       Mean |        p99 | Samples |
+| ---------------------------------------------- | ---------: | ---------: | ------: |
+| Empty catalog (early return)                   |     0.9 µs |     1.8 µs | 534,389 |
+| k=1 from 14-tool catalog                       |    0.66 ms |    1.45 ms |     763 |
+| **14-tool catalog (current)**                  | **1.2 ms** | **3.8 ms** | **415** |
+| k=50 from 200-tool catalog                     |     9.9 ms |    14.5 ms |      51 |
+| 50-tool catalog (growth target)                |     3.0 ms |     9.6 ms |     170 |
+| **200-tool catalog (stress)**                  |  **11 ms** |  **17 ms** |  **46** |
+| High threshold 0.99 — heavy filtering          |     2.4 ms |     3.3 ms |     206 |
+| Intent-heavy query — S2 path                   |     2.7 ms |     5.1 ms |     183 |
+| Homogeneous catalog — worst-case sort (100t)   |     3.6 ms |     6.9 ms |     138 |
+| Polarity penalty — query matching whenNotToUse |     2.4 ms |     4.4 ms |     210 |
+
+Key observations:
+
+- **Empty catalog** (~0.9 µs) benefits from the early-return guard in `retrieve()`.
+- **14-tool catalog** (~1.2 ms mean, ~3.8 ms p99) is well within interactive latency budgets.
+- **200-tool stress** (~11 ms mean) is acceptable for server-side routing where the embedding HTTP call dominates.
+- **Homogeneous catalog** (identical embeddings across 100 tools) is the worst-case sort at ~3.6 ms — the RRF tiebreak adds no measurable overhead.
+- **Polarity penalty** and **S2 intent** paths add negligible overhead over standard routing.
+
 ### Continuous regression
 
 The vitest regression spec (`tests/regression/regression.spec.ts`) is the CI-facing regression guard. Run it after any catalog change — the assertions document the router's actual behavior. Known routing ambiguities (where sibling tools share vocabulary and the correct answer depends on authoring choices) are annotated inline with the reason they resolve as they do.
@@ -636,7 +674,7 @@ The vitest regression spec (`tests/regression/regression.spec.ts`) is the CI-fac
 | 2026-06-29 | `3a6798c` | **Retrieval rewrite: multi-signal RRF + boundary vocabulary + data-driven S2** — three-signal RRF fusion (dense cosine + structural intent detector + stopword-aware keyword overlap). Tool specs declare `whenToUse`/`whenNotToUse` (embedded with `NOT:` prefix), `triggers`/`boosts` (compiled into a dynamic two-layer rule table evaluated before builtin baselines). IntentPattern split into 9 granular verbs (`write`, `edit`, `move`, `rename`, `read`, `search`, `list`, `scan`). `search_query:`/`search_document:` nomic prefixes; `--threshold` filter; `--json` debug breakdown; `cosine-similarity.ts` consumed as single source of truth. **Verified**: `route "List all the files with *.ts"` → glob #1 at 0.98; `route "analyze the src folder"` with a synthetic `myAnalyzer` tool having `triggers:["analyze"]` ranked #1 with zero code change; all 14 tools hold #1 on their primary phrasing. |
 | 2026-06-30 | `31abb89` | **Test harness + S2 specificity ordering + routing ambiguity fixes** — full vitest suite (119 tests: 46 unit + 20 integration + 48 regression + 5 edge cases). S2 detector reorders from first-match to **longest-trigger-wins** so broad triggers no longer shadow specific ones. Builtin baseline `matchNames` regexes drop trailing `\b` so camelCase tool names (`editFile`, `writeFile`) match. Search baseline tightened to stop cross-contaminating `editFile` into the search cluster. `normalize()` hardened to always copy (defensive against in-place mutation). `tool-loader` skips malformed JSON instead of throwing. 4 known routing ambiguities resolved via targeted catalog enrichment (extension-change → renameFile, recursive structure → scanDirectory, content-search phrasings → grep).                                                                                                      |
 | 2026-06-30 | `f0d991d` | **Two-vector polarity encoding + 119-test suite** — each tool now stores a positive prototype (`posVec`, from name + description + params + intent + examples + whenToUse) and a negative prototype (`negVec`, from whenNotToUse). S1 score becomes `cosine(q, posVec) - α·cosine(q, negVec)` (α = 0.3, overridable via `$POLARITYalpha`). This is the mechanism the `NOT:` prefix was always trying to provide but could not achieve inside a single centroid, where negative text only _added_ to cosine. Now a query sharing tokens with a tool's exclusion criteria is genuinely demoted. Backward-compatible: old JSONL indexes load with a zero-length negVec (no penalty) and `add()` without `negEmbeddings` behaves identically. Catalog unchanged — the 14 existing `whenNotToUse` declarations are the only input.                                                                                        |
-| 2026-06-30 | `HEAD`    | **Benchmark suite + DX scripts + edge-case coverage** — added `tests/benchmark/routing.bench.ts` with 10 latency variants (14/50/200 tools + empty catalog, k=1, k=50, threshold, intent-heavy, homogeneous, polarity penalty). New npm scripts: `test:unit`, `test:integration`, `test:regression`, `clean`, `check`, `bench`, `bench:watch`. Removed legacy `test-routes.cmd`/`test-routes-stop.cmd`. Renamed `stress/` → `regression/`. Added `tmp/` to `.gitignore`. `VectorStore.add()` signature now includes optional `negEmbeddings`.                                                                                                                                                                                                                                                                                                                                                                        |
+| 2026-06-30 | `6948415` | **Benchmark suite + DX scripts + edge-case coverage** — added `tests/benchmark/routing.bench.ts` with 10 latency variants (14/50/200 tools + empty catalog, k=1, k=50, threshold, intent-heavy, homogeneous, polarity penalty). New npm scripts: `test:unit`, `test:integration`, `test:regression`, `clean`, `check`, `bench`, `bench:watch`. Removed legacy `test-routes.cmd`/`test-routes-stop.cmd`. Renamed `stress/` → `regression/`. Added `tmp/` to `.gitignore`. `VectorStore.add()` signature now includes optional `negEmbeddings`.                                                                                                                                                                                                                                                                                                                                                                        |
 
 ## Quality Score Estimate Across the Change Timeline
 
