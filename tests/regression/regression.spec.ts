@@ -18,7 +18,7 @@ import { ToolLoader } from '../../src/tools/tool-loader.js';
 // If Ollama is offline, beforeAll fails fast with a clear message instead of
 // producing 45 opaque per-query failures.
 
-const TOOLS_DIR = 'tools';
+const TOOLSDIR = 'tools';
 
 interface Case {
   query: string;
@@ -110,9 +110,9 @@ const SUITE: Case[] = [
   { query: 'the meaning of life', expected: '', negative: true },
 ];
 
-const NEGATIVE_FLOOR = 0.7; // true negatives should stay below this
+const NegativeFloor = 0.7; // true negatives should stay below this
 
-describe('stress regression (real embedder, real catalog)', () => {
+describe('regression (real embedder, real catalog)', () => {
   const embedder = new OllamaEmbedder();
   let store: VectorStore;
 
@@ -125,7 +125,7 @@ describe('stress regression (real embedder, real catalog)', () => {
       if (!res.ok) throw new Error(`Ollama returned ${res.status}`);
     } catch (err: any) {
       throw new Error(
-        `Ollama is offline — stress suite requires a running Ollama with nomic-embed-text:latest pulled. (${err.message})`,
+        `Ollama is offline — regression suite requires a running Ollama with nomic-embed-text:latest pulled. (${err.message})`,
       );
     } finally {
       clearTimeout(timeout);
@@ -134,7 +134,7 @@ describe('stress regression (real embedder, real catalog)', () => {
     // Build an in-memory index from the real catalog using the real embedder.
     // Mirrors index.command.ts: positive and negative prototypes are embedded
     // separately so the S1 score can subtract the negative-prototype cosine.
-    const tools = ToolLoader.loadFromDirectory(TOOLS_DIR);
+    const tools = ToolLoader.loadFromDirectory(TOOLSDIR);
     store = new VectorStore();
     const posEmbeddings: number[][] = [];
     const negEmbeddings: number[][] = [];
@@ -155,16 +155,16 @@ describe('stress regression (real embedder, real catalog)', () => {
       }
     }
     await store.add(tools, posEmbeddings, negEmbeddings);
-  }, 120_000); // embedding 14 tools (pos + neg) can take a few seconds
+  }, 120000); // embedding 14 tools (pos + neg) can take a few seconds
 
   for (const { query, expected, negative } of SUITE) {
-    it(`routes "${query}" → ${negative ? `(negative, <${NEGATIVE_FLOOR})` : expected}`, async () => {
+    it(`routes "${query}" → ${negative ? `(negative, <${NegativeFloor})` : expected}`, async () => {
       const results = await retrieve(query, embedder, store, { k: 5 });
 
       if (negative) {
         // True negative: no tool should clear the confidence floor.
         for (const r of results) {
-          expect(r.score).toBeLessThan(NEGATIVE_FLOOR);
+          expect(r.score).toBeLessThan(NegativeFloor);
         }
       } else {
         expect(results.length).toBeGreaterThan(0);

@@ -12,7 +12,7 @@ function makeTool(name: string, description: string, extra: Partial<Tool> = {}):
   };
 }
 
-const GLOB_TOOL = makeTool('glob', 'Find files matching a glob pattern.', {
+const GlobTool = makeTool('glob', 'Find files matching a glob pattern.', {
   examples: ['Find all .ts files in src', 'Locate files matching *.json'],
   whenToUse: ['The query contains a glob pattern'],
   whenNotToUse: ['The user wants to read a specific file'],
@@ -20,13 +20,13 @@ const GLOB_TOOL = makeTool('glob', 'Find files matching a glob pattern.', {
 
 describe('keywordScoreText', () => {
   it('returns 1.0 when the query shares all tokens with the tool text', () => {
-    // "glob pattern" — both tokens appear in GLOB_TOOL's canonical text.
+    // "glob pattern" — both tokens appear in GlobTool's canonical text.
     const score = keywordScoreText('glob pattern', 'glob pattern find files');
     expect(score).toBeCloseTo(1, 5);
   });
 
   it('returns 0.0 when the query shares no tokens with the tool text', () => {
-    const score = keywordScoreText('quantum entanglement', GLOB_TOOL.description);
+    const score = keywordScoreText('quantum entanglement', GlobTool.description);
     expect(score).toBe(0);
   });
 
@@ -52,13 +52,13 @@ describe('keywordScoreText', () => {
 describe('keywordScore — stopword handling', () => {
   it('ignores common stopwords that carry little tool-choice signal', () => {
     // "the" and "a" are stopwords; the only signal token is "glob".
-    const withStopwords = keywordScore('the a glob', GLOB_TOOL);
-    const withoutStopwords = keywordScore('glob', GLOB_TOOL);
+    const withStopwords = keywordScore('the a glob', GlobTool);
+    const withoutStopwords = keywordScore('glob', GlobTool);
     expect(withStopwords).toBeCloseTo(withoutStopwords, 5);
   });
 
   it('does not inflate the score when the query is all stopwords', () => {
-    const score = keywordScore('the a an is are was', GLOB_TOOL);
+    const score = keywordScore('the a an is are was', GlobTool);
     expect(score).toBe(0);
   });
 });
@@ -67,12 +67,12 @@ describe('keywordScore — glob-token expansion', () => {
   it('matches the extension token "ts" when the query uses "*.ts"', () => {
     // The tool text embeds "*.ts" (via examples). The query "ts files" should
     // overlap because "*.ts" is expanded to also index "ts".
-    const score = keywordScore('ts files', GLOB_TOOL);
+    const score = keywordScore('ts files', GlobTool);
     expect(score).toBeGreaterThan(0);
   });
 
   it('matches ".ts" as well as "ts" for a "*.ts" tool text', () => {
-    const score = keywordScore('.ts', GLOB_TOOL);
+    const score = keywordScore('.ts', GlobTool);
     expect(score).toBeGreaterThan(0);
   });
 
@@ -92,13 +92,13 @@ describe('keywordScore — composition contract', () => {
     // The canonical text includes "NOT: The user wants to read a specific file".
     // A query about reading a file should therefore overlap with glob's
     // whenNotToUse — this is the intended behavior (S3 surfaces the boundary).
-    const score = keywordScore('read a specific file', GLOB_TOOL);
+    const score = keywordScore('read a specific file', GlobTool);
     expect(score).toBeGreaterThan(0);
   });
 
   it('is deterministic for the same inputs', () => {
-    const a = keywordScore('find files', GLOB_TOOL);
-    const b = keywordScore('find files', GLOB_TOOL);
+    const a = keywordScore('find files', GlobTool);
+    const b = keywordScore('find files', GlobTool);
     expect(a).toBe(b);
   });
 

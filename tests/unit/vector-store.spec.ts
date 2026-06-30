@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { VectorStore } from '../../src/vector/vector-store.js';
 import { Tool } from '../../src/types.js';
 
@@ -13,8 +13,8 @@ const ToolA = makeTool('alpha', 'first tool');
 const ToolB = makeTool('beta', 'second tool');
 
 // Unit vectors along orthogonal axes.
-const EMBED_A = [1, 0, 0];
-const EMBED_B = [0, 1, 0];
+const EMBEDa = [1, 0, 0];
+const EMBEDb = [0, 1, 0];
 
 let store: VectorStore;
 
@@ -29,17 +29,17 @@ describe('add + size', () => {
   });
 
   it('reports size after adding tools', async () => {
-    await store.add([ToolA, ToolB], [EMBED_A, EMBED_B]);
+    await store.add([ToolA, ToolB], [EMBEDa, EMBEDb]);
     expect(store.size()).toBe(2);
   });
 
   it('throws when tools and embeddings have different lengths', async () => {
-    await expect(store.add([ToolA, ToolB], [EMBED_A])).rejects.toThrow(/length mismatch/);
+    await expect(store.add([ToolA, ToolB], [EMBEDa])).rejects.toThrow(/length mismatch/);
   });
 
   it('upserts by tool name on second add', async () => {
-    await store.add([ToolA], [EMBED_A]);
-    await store.add([ToolA], [EMBED_B]); // overwrite
+    await store.add([ToolA], [EMBEDa]);
+    await store.add([ToolA], [EMBEDb]); // overwrite
     expect(store.size()).toBe(1);
     const tools = store.tools();
     expect(tools[0].name).toBe('alpha');
@@ -48,7 +48,7 @@ describe('add + size', () => {
 
 describe('search', () => {
   beforeEach(async () => {
-    await store.add([ToolA, ToolB], [EMBED_A, EMBED_B]);
+    await store.add([ToolA, ToolB], [EMBEDa, EMBEDb]);
   });
 
   it('returns the closest tool first for an aligned query', async () => {
@@ -120,9 +120,30 @@ describe('search', () => {
   });
 });
 
+describe('search + searchTools', () => {
+  it('treats an all-zero negVec as no penalty (isZeroVec branch)', async () => {
+    // A negVec of [0,0,0] is non-zero-length but all-zero — isZeroVec must
+    // return true so the polarity subtraction is skipped (same as zero-length).
+    const ToolA = makeTool('alpha', 'first tool');
+    await store.add([ToolA], [[1, 0, 0]], [[0, 0, 0]]);
+    const results = await store.search([1, 0, 0], 5);
+    // cosine(q=[1,0,0], pos=[1,0,0]) = 1.0, no penalty because isZeroVec=true.
+    expect(results[0].score).toBeCloseTo(1, 5);
+  });
+
+  it('searchTools() returns tools without scores (back-compat shim)', async () => {
+    await store.add([ToolA, ToolB], [EMBEDa, EMBEDb]);
+    const tools = await store.searchTools([1, 0, 0], 5);
+    expect(tools).toHaveLength(2);
+    expect(tools[0].name).toBe('alpha');
+    // searchTools drops scores — the returned objects are plain Tool records.
+    expect((tools[0] as any).score).toBeUndefined();
+  });
+});
+
 describe('tools + toolTexts', () => {
   it('exposes the catalog via tools()', async () => {
-    await store.add([ToolA, ToolB], [EMBED_A, EMBED_B]);
+    await store.add([ToolA, ToolB], [EMBEDa, EMBEDb]);
     const names = store.tools().map((t) => t.name).sort();
     expect(names).toEqual(['alpha', 'beta']);
   });
@@ -145,7 +166,7 @@ describe('tools + toolTexts', () => {
   });
 
   it('returns a fresh array from tools() (no internal mutation leak)', async () => {
-    await store.add([ToolA], [EMBED_A]);
+    await store.add([ToolA], [EMBEDa]);
     const t1 = store.tools();
     t1.pop(); // mutate the returned copy
     expect(store.size()).toBe(1); // internal state unaffected
@@ -161,17 +182,17 @@ describe('metadata + size + error paths', () => {
 
   it('reports size as the number of stored vectors', async () => {
     expect(store.size()).toBe(0);
-    await store.add([ToolA], [EMBED_A]);
+    await store.add([ToolA], [EMBEDa]);
     expect(store.size()).toBe(1);
   });
 
   it('throws when negEmbeddings length does not match tools', async () => {
-    await expect(store.add([ToolA, ToolB], [EMBED_A, EMBED_B], [[1, 0, 0]])).rejects.toThrow(/negEmbeddings length mismatch/);
+    await expect(store.add([ToolA, ToolB], [EMBEDa, EMBEDb], [[1, 0, 0]])).rejects.toThrow(/negEmbeddings length mismatch/);
   });
 });
 
 describe('save + load round-trip (JSONL)', () => {
-  const tmpPath = `test-store-${process.pid}.jsonl`;
+  const tmpPath = `tmp/test-store-${process.pid}.jsonl`;
 
   it('persists posVec and negVec and reloads them', async () => {
     const store1 = new VectorStore(tmpPath);
@@ -242,5 +263,39 @@ describe('save + load round-trip (JSONL)', () => {
     const record = JSON.parse(raw.trim());
     expect(record.data.posVec).toBeDefined();
     expect(record.data.negVec).toBeUndefined();
+  });
+
+  it('load() with a non-existent file yields an empty store', async () => {
+    const fs = await import('node:fs');
+    const missingPath = `tmp/missing-store-${process.pid}.jsonl`;
+    // Ensure the file does not exist.
+    if (fs.existsSync(missingPath)) fs.unlinkSync(missingPath);
+
+    const store = new VectorStore(missingPath);
+    await store.load();
+    expect(store.size()).toBe(0);
+    expect(store.getMetadata()).toBeNull();
+    // An empty store must still be searchable (returns []).
+    const results = await store.search([1, 0, 0], 5);
+    expect(results).toEqual([]);
+  });
+
+  it('skips a vector record that has neither posVec nor embedding', async () => {
+    // A vector record missing both fields triggers the warn-and-skip branch.
+    const fs = await import('node:fs');
+    const record = JSON.stringify({
+      type: 'vector',
+      data: { tool: { name: 'orphan', description: 'x', parameters: {} } },
+    });
+    fs.writeFileSync(tmpPath, record + '\n');
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const store = new VectorStore(tmpPath);
+    await store.load();
+    expect(store.size()).toBe(0);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('missing posVec/embedding'),
+    );
+    warnSpy.mockRestore();
   });
 });

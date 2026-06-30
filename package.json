@@ -14,7 +14,12 @@
     "dev": "vite-node src/cli.ts",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration",
+    "test:regression": "vitest run tests/regression",
     "test:coverage": "vitest run --coverage",
+    "check": "yarn typecheck && yarn test:coverage && yarn build",
+    "clean": "rm -rf dist coverage tmp/*.jsonl test-store-*.jsonl test-cmd-store-*.jsonl .vitest",
     "bench": "vitest bench --run --config vitest.bench.config.ts",
     "bench:watch": "vitest bench --config vitest.bench.config.ts"
   },

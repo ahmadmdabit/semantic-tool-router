@@ -2,11 +2,11 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { writeFileSync, mkdirSync, rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const TMP_DIR = `test-cmd-tools-${process.pid}`;
-const TMP_STORE = `test-cmd-store-${process.pid}.jsonl`;
+const TMPDIR = `test-cmd-tools-${process.pid}`;
+const TMPSTORE = `test-cmd-store-${process.pid}.jsonl`;
 
 function writeTool(filename: string, tool: unknown) {
-  writeFileSync(join(TMP_DIR, filename), JSON.stringify(tool));
+  writeFileSync(join(TMPDIR, filename), JSON.stringify(tool));
 }
 
 function validTool(name: string) {
@@ -47,12 +47,12 @@ vi.mock('../../src/embeddings/ollama-embedder.js', () => ({
 }));
 
 beforeEach(() => {
-  mkdirSync(TMP_DIR, { recursive: true });
+  mkdirSync(TMPDIR, { recursive: true });
 });
 
 afterEach(() => {
-  rmSync(TMP_DIR, { recursive: true, force: true });
-  rmSync(TMP_STORE, { force: true });
+  rmSync(TMPDIR, { recursive: true, force: true });
+  rmSync(TMPSTORE, { force: true });
   vi.restoreAllMocks();
 });
 
@@ -65,9 +65,9 @@ describe('index command', () => {
 
     // createIndexCommand returns the `index` subcommand, so the args after
     // parsing are just the positional + options (no leading `index` token).
-    await cmd.parseAsync(['node', 'cli', TMP_DIR, '--dimensions', '8', '--output', TMP_STORE]);
+    await cmd.parseAsync(['node', 'cli', TMPDIR, '--dimensions', '8', '--output', TMPSTORE]);
 
-    const raw = readFileSync(TMP_STORE, 'utf-8').trim().split('\n');
+    const raw = readFileSync(TMPSTORE, 'utf-8').trim().split('\n');
     const records = raw.map((l) => JSON.parse(l));
     const vectors = records.filter((r: any) => r.type === 'vector');
     expect(vectors.length).toBe(1);
@@ -88,7 +88,7 @@ describe('index command', () => {
     }) as typeof process.exit);
 
     await expect(
-      cmd.parseAsync(['node', 'cli', TMP_DIR, '--dimensions', '-1']),
+      cmd.parseAsync(['node', 'cli', TMPDIR, '--dimensions', '-1']),
     ).rejects.toThrow('EXIT_1');
 
     expect(exitSpy).toHaveBeenCalledWith(1);
@@ -105,9 +105,9 @@ describe('index + route end-to-end (mocked embedder)', () => {
 
     // Step 1: index.
     const indexCmd = createIndexCommand();
-    await indexCmd.parseAsync(['node', 'cli', TMP_DIR, '--dimensions', '8', '--output', TMP_STORE]);
+    await indexCmd.parseAsync(['node', 'cli', TMPDIR, '--dimensions', '8', '--output', TMPSTORE]);
 
-    const rawLines = readFileSync(TMP_STORE, 'utf-8').trim().split('\n');
+    const rawLines = readFileSync(TMPSTORE, 'utf-8').trim().split('\n');
     const vectors = rawLines.map((l) => JSON.parse(l)).filter((r: any) => r.type === 'vector');
     expect(vectors.length).toBe(2);
     expect(vectors[0].data.posVec).toBeDefined();
@@ -118,7 +118,7 @@ describe('index + route end-to-end (mocked embedder)', () => {
     const origLog = console.log;
     console.log = (...args: any[]) => { logs.push(args.map(String).join(' ')); };
 
-    await routeCmd.parseAsync(['node', 'cli', 'glob wildcard pattern', '--store', TMP_STORE, '--dimensions', '8']);
+    await routeCmd.parseAsync(['node', 'cli', 'glob wildcard pattern', '--store', TMPSTORE, '--dimensions', '8']);
 
     console.log = origLog;
     const output = logs.join('\n');
@@ -133,7 +133,7 @@ describe('index + route end-to-end (mocked embedder)', () => {
     const { createRouteCommand } = await import('../../src/commands/route.command.js');
 
     const indexCmd = createIndexCommand();
-    await indexCmd.parseAsync(['node', 'cli', TMP_DIR, '--dimensions', '8', '--output', TMP_STORE]);
+    await indexCmd.parseAsync(['node', 'cli', TMPDIR, '--dimensions', '8', '--output', TMPSTORE]);
 
     const routeCmd = createRouteCommand();
     const logs: string[] = [];
@@ -141,7 +141,7 @@ describe('index + route end-to-end (mocked embedder)', () => {
     console.log = (...args: any[]) => { logs.push(args.map(String).join(' ')); };
 
     // An extremely high threshold should drop every tool.
-    await routeCmd.parseAsync(['node', 'cli', 'glob pattern', '--store', TMP_STORE, '--dimensions', '8', '--threshold', '0.9999']);
+    await routeCmd.parseAsync(['node', 'cli', 'glob pattern', '--store', TMPSTORE, '--dimensions', '8', '--threshold', '0.9999']);
 
     console.log = origLog;
     expect(logs.join('\n')).toMatch(/no tools matched/);
@@ -178,12 +178,119 @@ describe('route command — input validation', () => {
   });
 });
 
-describe('route command — output modes', () => {
-  it('emits JSON array when --json is passed', async () => {
+describe('index command — negative prototype', () => {
+  it('embeds an empty negVec when a tool has no whenNotToUse', async () => {
+    // Tool without whenNotToUse → buildNegText returns '' → embedder is never
+    // called for the negative side, and the store records a zero-length negVec.
+    const noNegTool = {
+      name: 'simple',
+      description: 'a tool without boundaries',
+      intent: 'simple intent',
+      examples: ['do a thing'],
+      whenToUse: ['when doing a thing'],
+      // no whenNotToUse
+      triggers: ['simple'],
+      boosts: [],
+      parameters: { type: 'object', properties: {} },
+    };
+    writeTool('simple.json', noNegTool);
+
+    const { createIndexCommand } = await import('../../src/commands/index.command.js');
+    const cmd = createIndexCommand();
+    await cmd.parseAsync(['node', 'cli', TMPDIR, '--dimensions', '8', '--output', TMPSTORE]);
+
+    // Load the store and verify the negVec is zero-length.
+    const { VectorStore } = await import('../../src/vector/vector-store.js');
+    const store = new VectorStore(TMPSTORE);
+    await store.load();
+    const tools = store.tools();
+    expect(tools[0].name).toBe('simple');
+
+    // Search for the tool — score should be a pure positive cosine (no
+    // penalty) since negVec is zero-length. The exact value depends on the
+    // mock hash, but it must be positive and the tool must rank #1.
+    const results = await store.search([1, 0, 0, 0, 0, 0, 0, 0], 5);
+    expect(results[0].tool.name).toBe('simple');
+    expect(results[0].score).toBeGreaterThan(0); // pure cosine, no subtraction
+
+    // Verify the JSONL on disk has no negVec field (empty negVec is not persisted).
+    const fs = await import('node:fs');
+    const lines = fs.readFileSync(TMPSTORE, 'utf-8').trim().split('\n');
+    const vectorLine = lines.find((l) => JSON.parse(l).type === 'vector');
+    const record = JSON.parse(vectorLine!);
+    expect(record.data.posVec).toBeDefined();
+    expect(record.data.negVec).toBeUndefined();
+  });
+});
+
+describe('route command — edge cases', () => {
+  it('exits with code 1 when the vector store is empty', async () => {
+    // Point --store at a non-existent file → load() yields an empty store.
+    const { createRouteCommand } = await import('../../src/commands/route.command.js');
+    const cmd = createRouteCommand();
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`EXIT_${code}`);
+    }) as typeof process.exit);
+
+    await expect(
+      cmd.parseAsync(['node', 'cli', 'glob pattern', '--store', 'nonexistent-store.jsonl']),
+    ).rejects.toThrow('EXIT_1');
+    expect(exitSpy).toHaveBeenCalledWith(1);
+  });
+
+  it('warns when the indexed model differs from the query model', async () => {
     writeTool('glob.json', validTool('glob'));
     const { createIndexCommand } = await import('../../src/commands/index.command.js');
     const indexCmd = createIndexCommand();
-    await indexCmd.parseAsync(['node', 'cli', TMP_DIR, '--dimensions', '8', '--output', TMP_STORE]);
+    await indexCmd.parseAsync(['node', 'cli', TMPDIR, '--dimensions', '8', '--output', TMPSTORE]);
+
+    // Load the store, rewrite metadata to a different model, save it back.
+    const fs = await import('node:fs');
+    const rawLines = fs.readFileSync(TMPSTORE, 'utf-8').trim().split('\n');
+    const records = rawLines.map((l) => JSON.parse(l));
+    const metaRecord = records.find((r: any) => r.type === 'metadata');
+    if (metaRecord) metaRecord.data.model = 'other-model:latest';
+    fs.writeFileSync(TMPSTORE, records.map((r) => JSON.stringify(r)).join('\n') + '\n');
+
+    const { createRouteCommand } = await import('../../src/commands/route.command.js');
+    const cmd = createRouteCommand();
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await cmd.parseAsync(['node', 'cli', 'glob pattern', '--store', TMPSTORE, '--dimensions', '8']);
+
+    const warnings = warnSpy.mock.calls.map((c) => c.join(' ')).join('\n');
+    expect(warnings).toMatch(/Index was built with model "other-model:latest"/);
+    warnSpy.mockRestore();
+  });
+
+  it('warns when the vector store has no metadata', async () => {
+    // Hand-write a JSONL store with only a vector record (no metadata).
+    const fs = await import('node:fs');
+    const vectorOnly = JSON.stringify({
+      type: 'vector',
+      data: {
+        tool: { name: 'glob', description: 'g', parameters: { type: 'object', properties: {} } },
+        posVec: embedSync('glob'),
+      },
+    });
+    fs.writeFileSync(TMPSTORE, vectorOnly + '\n');
+
+    const { createRouteCommand } = await import('../../src/commands/route.command.js');
+    const cmd = createRouteCommand();
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await cmd.parseAsync(['node', 'cli', 'glob pattern', '--store', TMPSTORE, '--dimensions', '8']);
+
+    const warnings = warnSpy.mock.calls.map((c) => c.join(' ')).join('\n');
+    expect(warnings).toMatch(/no metadata/);
+    warnSpy.mockRestore();
+  });
+
+  it('prints the intent signal when a structural rule fires', async () => {
+    writeTool('glob.json', validTool('glob'));
+    const { createIndexCommand } = await import('../../src/commands/index.command.js');
+    const indexCmd = createIndexCommand();
+    await indexCmd.parseAsync(['node', 'cli', TMPDIR, '--dimensions', '8', '--output', TMPSTORE]);
 
     const { createRouteCommand } = await import('../../src/commands/route.command.js');
     const cmd = createRouteCommand();
@@ -191,7 +298,30 @@ describe('route command — output modes', () => {
     const origLog = console.log;
     console.log = (...args: any[]) => { logs.push(args.map(String).join(' ')); };
 
-    await cmd.parseAsync(['node', 'cli', 'glob pattern', '--store', TMP_STORE, '--dimensions', '8', '--json']);
+    // A query containing actual glob characters (*) fires the builtin glob
+    // baseline rule (pattern: 'glob'), which surfaces as a non-'none' intent.
+    await cmd.parseAsync(['node', 'cli', 'find all *.ts files', '--store', TMPSTORE, '--dimensions', '8']);
+
+    console.log = origLog;
+    const output = logs.join('\n');
+    expect(output).toMatch(/Intent signal: glob/);
+  });
+});
+
+describe('route command — output modes', () => {
+  it('emits JSON array when --json is passed', async () => {
+    writeTool('glob.json', validTool('glob'));
+    const { createIndexCommand } = await import('../../src/commands/index.command.js');
+    const indexCmd = createIndexCommand();
+    await indexCmd.parseAsync(['node', 'cli', TMPDIR, '--dimensions', '8', '--output', TMPSTORE]);
+
+    const { createRouteCommand } = await import('../../src/commands/route.command.js');
+    const cmd = createRouteCommand();
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: any[]) => { logs.push(args.map(String).join(' ')); };
+
+    await cmd.parseAsync(['node', 'cli', 'glob pattern', '--store', TMPSTORE, '--dimensions', '8', '--json']);
 
     console.log = origLog;
     const output = logs.join('\n');
@@ -207,7 +337,7 @@ describe('route command — output modes', () => {
     const { createIndexCommand } = await import('../../src/commands/index.command.js');
     const indexCmd = createIndexCommand();
     // Build the index at 8 dimensions.
-    await indexCmd.parseAsync(['node', 'cli', TMP_DIR, '--dimensions', '8', '--output', TMP_STORE]);
+    await indexCmd.parseAsync(['node', 'cli', TMPDIR, '--dimensions', '8', '--output', TMPSTORE]);
 
     const { createRouteCommand } = await import('../../src/commands/route.command.js');
     const cmd = createRouteCommand();
@@ -217,7 +347,7 @@ describe('route command — output modes', () => {
 
     // Query at a different dimension count — triggers the metadata mismatch branch.
     await expect(
-      cmd.parseAsync(['node', 'cli', 'glob pattern', '--store', TMP_STORE, '--dimensions', '16']),
+      cmd.parseAsync(['node', 'cli', 'glob pattern', '--store', TMPSTORE, '--dimensions', '16']),
     ).rejects.toThrow('EXIT_1');
     expect(exitSpy).toHaveBeenCalledWith(1);
   });

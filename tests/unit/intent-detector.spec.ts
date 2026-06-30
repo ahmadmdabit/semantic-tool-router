@@ -92,7 +92,7 @@ const CATALOG: Tool[] = [
 
 // A second catalog with overlapping names but DIFFERENT triggers, used to prove
 // resetIntentCache() actually rebuilds the rule table.
-const OTHER_CATALOG: Tool[] = [
+const OtherCatalog: Tool[] = [
   {
     name: 'myAnalyzer',
     description: 'Analyze a folder.',
@@ -154,6 +154,25 @@ describe('detectIntent — dynamic rules (Layer 1)', () => {
     const hints = detectIntent('find file.ts usage', regexCatalog);
     expect(hints.boostTools.has('grep')).toBe(true);
     expect(hints.reason).toContain('dynamic:grep:file.ts');
+  });
+
+  it('defaults boosts to [] when the tool omits the field', () => {
+    // A tool with triggers but no boosts field must still fire its dynamic
+    // rule — boosts ?? [] falls back to an empty array, so boostTools contains
+    // only the declaring tool itself.
+    const catalog: Tool[] = [
+      {
+        name: 'solo',
+        description: 'a tool without boosts',
+        parameters: { type: 'object', properties: {} },
+        triggers: ['solo-trigger'],
+        // boosts intentionally omitted
+      },
+    ];
+    resetIntentCache();
+    const hints = detectIntent('solo-trigger fired', catalog);
+    expect(hints.boostTools.has('solo')).toBe(true);
+    expect(hints.boostTools.size).toBe(1); // no boosts → only the declaring tool
   });
 
   it('picks the longest trigger when two tools match the same query', () => {
@@ -243,7 +262,7 @@ describe('detectIntentLegacy', () => {
 
 describe('resetIntentCache', () => {
   it('isolates two catalogs called in sequence within the same process', () => {
-    const h1 = detectIntent('analyze the folder', OTHER_CATALOG);
+    const h1 = detectIntent('analyze the folder', OtherCatalog);
     expect(h1.boostTools.has('myAnalyzer')).toBe(true);
 
     // Without a reset, a naive cache keyed only on names could reuse the old
@@ -254,7 +273,7 @@ describe('resetIntentCache', () => {
   });
 
   it('rebuilds an equivalent table after reset (no stale entries)', () => {
-    detectIntent('analyze', OTHER_CATALOG);
+    detectIntent('analyze', OtherCatalog);
     resetIntentCache();
     // 'analyze' is NOT a trigger in CATALOG, so it should no longer match.
     const h = detectIntent('analyze', CATALOG);

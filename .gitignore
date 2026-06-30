@@ -3,6 +3,7 @@ dist/
 build/
 node_modules
 coverage/
+tmp/
 
 vector-store.jsonl
 test-store-*.jsonl

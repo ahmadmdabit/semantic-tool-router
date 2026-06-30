@@ -6,7 +6,7 @@ export default defineConfig({
     // Running specs in separate workers is fine (each gets its own module
     // instance), but within a single file the cache leaks between tests —
     // specs call resetIntentCache() in beforeEach to isolate. Disabling
-    // cross-file parallelism keeps total runtime predictable for the stress
+    // cross-file parallelism keeps total runtime predictable for the regression
     // spec which embeds the real model.
     fileParallelism: false,
     include: ['tests/**/*.spec.ts'],
@@ -20,9 +20,6 @@ export default defineConfig({
         functions: 90,
         lines: 90,
       },
-    },
-    benchmark: {
-      include: ['tests/**/*.bench.ts'],
     },
     environment: 'node',
   },

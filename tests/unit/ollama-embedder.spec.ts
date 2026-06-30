@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { OllamaEmbedder } from '../../src/embeddings/ollama-embedder.js';
 
 // A 10-dimensional deterministic vector we control.
-const FAKE_VECTOR = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
+const FakeVector = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
 
 function mockFetch(response: { ok: boolean; statusText?: string; body?: any; failWith?: Error }) {
   global.fetch = vi.fn(async () => {
@@ -10,7 +10,7 @@ function mockFetch(response: { ok: boolean; statusText?: string; body?: any; fai
     return {
       ok: response.ok,
       statusText: response.statusText ?? '',
-      json: async () => response.body ?? { embedding: FAKE_VECTOR },
+      json: async () => response.body ?? { embedding: FakeVector },
     } as Response;
   });
 }
@@ -24,12 +24,12 @@ describe('OllamaEmbedder', () => {
   });
 
   it('prepends search_query: for query type and search_document: for document type', async () => {
-    const embedder = new OllamaEmbedder('http://x', 'm', 10); // 10 matches FAKE_VECTOR length
+    const embedder = new OllamaEmbedder('http://x', 'm', 10); // 10 matches FakeVector length
     let capturedPrompt = '';
 
     global.fetch = vi.fn(async (_url, opts: any) => {
       capturedPrompt = JSON.parse(opts.body).prompt;
-      return { ok: true, statusText: '', json: async () => ({ embedding: FAKE_VECTOR }) } as Response;
+      return { ok: true, statusText: '', json: async () => ({ embedding: FakeVector }) } as Response;
     });
 
     await embedder.embed('find files', 'query');
@@ -45,7 +45,7 @@ describe('OllamaEmbedder', () => {
 
     global.fetch = vi.fn(async (_url, opts: any) => {
       capturedPrompt = JSON.parse(opts.body).prompt;
-      return { ok: true, statusText: '', json: async () => ({ embedding: FAKE_VECTOR }) } as Response;
+      return { ok: true, statusText: '', json: async () => ({ embedding: FakeVector }) } as Response;
     });
 
     await embedder.embed('glob pattern');
@@ -59,7 +59,7 @@ describe('OllamaEmbedder', () => {
   });
 
   it('truncates to requested dimensions (Matryoshka)', async () => {
-    mockFetch({ ok: true, body: { embedding: FAKE_VECTOR } }); // 10 dims
+    mockFetch({ ok: true, body: { embedding: FakeVector } }); // 10 dims
     const embedder = new OllamaEmbedder('http://x', 'm', 5);
     const result = await embedder.embed('test', 'document');
     expect(result).toHaveLength(5);
@@ -67,11 +67,11 @@ describe('OllamaEmbedder', () => {
   });
 
   it('returns the full vector when dimensions match exactly', async () => {
-    mockFetch({ ok: true, body: { embedding: FAKE_VECTOR } }); // 10 dims
+    mockFetch({ ok: true, body: { embedding: FakeVector } }); // 10 dims
     const embedder = new OllamaEmbedder('http://x', 'm', 10);
     const result = await embedder.embed('test', 'document');
     expect(result).toHaveLength(10);
-    expect(result).toEqual(FAKE_VECTOR);
+    expect(result).toEqual(FakeVector);
   });
 
   it('throws a descriptive error on non-ok response', async () => {

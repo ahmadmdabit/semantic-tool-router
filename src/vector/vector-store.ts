@@ -19,12 +19,12 @@ interface StoredVector {
 // the positive score. The negative text is dense (every token is about what the
 // tool is NOT) so its cosine with a matching query runs high per-token; this
 // dampens it to a meaningful-but-not-dominant penalty. Override with
-// $POLARITY_ALPHA during tuning.
-const PolarityAlpha = Number(process.env.POLARITY_ALPHA ?? 0.3);
+// $POLARITYalpha during tuning.
+const PolarityAlpha = Number(process.env.POLARITYalpha ?? 0.3);
 
 // Length of a zero-length negVec — used to detect "no negative prototype" and
 // skip the polarity subtraction for tools that haven't declared boundaries.
-const NEG_VEC_ZERO = new Float32Array(0);
+const NegVecZero = new Float32Array(0);
 
 function isZeroVec(v: Float32Array): boolean {
   for (let i = 0; i < v.length; i++) if (v[i] !== 0) return false;
@@ -62,8 +62,8 @@ export class VectorStore implements IVectorStore {
       // back to a zero-length negative vector — polarity subtraction then adds
       // nothing and behaviour is identical to the single-vector design.
       const negVec = negEmbeddings
-        ? (negEmbeddings[i]?.length ? normalize(negEmbeddings[i]) : NEG_VEC_ZERO)
-        : NEG_VEC_ZERO;
+        ? (negEmbeddings[i]?.length ? normalize(negEmbeddings[i]) : NegVecZero)
+        : NegVecZero;
       const existingIndex = this.vectors.findIndex((v) => v.tool.name === tools[i].name);
       const record = { tool: tools[i], posVec, negVec };
       if (existingIndex >= 0) {
@@ -150,7 +150,7 @@ export class VectorStore implements IVectorStore {
           }
           const neg = data.negVec && (data.negVec as number[]).length > 0
             ? new Float32Array(data.negVec as number[])
-            : NEG_VEC_ZERO;
+            : NegVecZero;
           this.vectors.push({
             tool: data.tool,
             posVec: new Float32Array(pos),
