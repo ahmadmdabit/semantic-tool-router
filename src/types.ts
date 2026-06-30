@@ -43,7 +43,7 @@ export interface SearchHints {
 }
 
 export interface IVectorStore {
-  add(tools: Tool[], embeddings: number[][]): Promise<void>;
+  add(tools: Tool[], embeddings: number[][], negEmbeddings?: number[][]): Promise<void>;
   search(queryEmbedding: number[], k: number, hints?: SearchHints): Promise<ScoredTool[]>;
   load(): Promise<void>;
   save(): Promise<void>;

@@ -5,4 +5,5 @@ node_modules
 coverage/
 
 vector-store.jsonl
+test-store-*.jsonl
 *.log

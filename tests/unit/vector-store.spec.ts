@@ -73,6 +73,31 @@ describe('search', () => {
     expect(results).toEqual([]);
   });
 
+  it('subtracts the negative-prototype cosine when negVec is present', async () => {
+    // Two tools with identical positive vectors but different negative vectors.
+    // A query aligned with BOTH the positive and ToolA's negative vector should
+    // score ToolA lower than ToolB (which has no negative signal).
+    const pos = [1, 0, 0];
+    const negA = [1, 0, 0]; // query-aligned negative → penalises ToolA
+    const zeroNeg = new Float32Array(0); // no negative → no penalty
+    const ToolA = makeTool('alpha', 'first tool');
+    const ToolB = makeTool('beta', 'second tool');
+    await store.add([ToolA, ToolB], [pos, pos], [negA, zeroNeg]);
+
+    const results = await store.search([1, 0, 0], 5);
+    // ToolB (no neg penalty) must outrank ToolA (neg penalty applied).
+    expect(results[0].tool.name).toBe('beta');
+    expect(results[1].tool.name).toBe('alpha');
+  });
+
+  it('treats a missing negVec as zero (no penalty)', async () => {
+    // Backward-compat: add without negEmbeddings → negVec is zero-length.
+    const ToolA = makeTool('alpha', 'first tool');
+    await store.add([ToolA], [[1, 0, 0]]);
+    const results = await store.search([1, 0, 0], 5);
+    expect(results[0].score).toBeCloseTo(1, 5); // pure positive cosine, no subtraction
+  });
+
   it('applies a boost multiplier to tools in boostTools', async () => {
     // Query aligned with beta. Without boost, beta wins (cosine 1.0 vs 0.0).
     // With boost on alpha, alpha's 0.0 * 1.15 = 0.0 — still loses. Use a tie:
@@ -124,5 +149,98 @@ describe('tools + toolTexts', () => {
     const t1 = store.tools();
     t1.pop(); // mutate the returned copy
     expect(store.size()).toBe(1); // internal state unaffected
+  });
+});
+
+describe('metadata + size + error paths', () => {
+  it('stores and retrieves metadata via setMetadata/getMetadata', () => {
+    expect(store.getMetadata()).toBeNull();
+    store.setMetadata({ model: 'nomic-embed-text:latest', dimensions: 768, indexedAt: '2026-06-30T00:00:00.000Z' });
+    expect(store.getMetadata()).toEqual({ model: 'nomic-embed-text:latest', dimensions: 768, indexedAt: '2026-06-30T00:00:00.000Z' });
+  });
+
+  it('reports size as the number of stored vectors', async () => {
+    expect(store.size()).toBe(0);
+    await store.add([ToolA], [EMBED_A]);
+    expect(store.size()).toBe(1);
+  });
+
+  it('throws when negEmbeddings length does not match tools', async () => {
+    await expect(store.add([ToolA, ToolB], [EMBED_A, EMBED_B], [[1, 0, 0]])).rejects.toThrow(/negEmbeddings length mismatch/);
+  });
+});
+
+describe('save + load round-trip (JSONL)', () => {
+  const tmpPath = `test-store-${process.pid}.jsonl`;
+
+  it('persists posVec and negVec and reloads them', async () => {
+    const store1 = new VectorStore(tmpPath);
+    const ToolA = makeTool('alpha', 'first tool');
+    await store1.add([ToolA], [[1, 0, 0]], [[0, 1, 0]]);
+    store1.setMetadata({ model: 'test-model', dimensions: 3, indexedAt: 'now' });
+    await store1.save();
+
+    const store2 = new VectorStore(tmpPath);
+    await store2.load();
+    expect(store2.size()).toBe(1);
+    expect(store2.getMetadata()?.model).toBe('test-model');
+
+    // The negative prototype must survive the round-trip: a query aligned
+    // with the negative vector should be penalised on reload.
+    const results = await store2.search([0, 1, 0], 5);
+    expect(results[0].tool.name).toBe('alpha');
+    // cosine(q=[0,1,0], pos=[1,0,0]) - 0.3*cosine(q=[0,1,0], neg=[0,1,0])
+    // = 0 - 0.3*1 = -0.3
+    expect(results[0].score).toBeCloseTo(-0.3, 5);
+  });
+
+  it('loads a legacy single-vector index (embedding field, no negVec)', async () => {
+    // Hand-write an old-format JSONL record.
+    const fs = await import('node:fs');
+    const legacy = JSON.stringify({
+      type: 'vector',
+      data: { tool: { name: 'legacy', description: 'old format', parameters: {} }, embedding: [1, 0, 0] },
+    });
+    fs.writeFileSync(tmpPath, legacy + '\n');
+
+    const store = new VectorStore(tmpPath);
+    await store.load();
+    expect(store.size()).toBe(1);
+    // No negVec → no penalty → pure positive cosine.
+    const results = await store.search([1, 0, 0], 5);
+    expect(results[0].score).toBeCloseTo(1, 5);
+  });
+
+  it('skips a vector record missing both posVec and embedding', async () => {
+    const fs = await import('node:fs');
+    const bad = JSON.stringify({ type: 'vector', data: { tool: { name: 'broken', description: 'x', parameters: {} } } });
+    fs.writeFileSync(tmpPath, bad + '\n');
+
+    const store = new VectorStore(tmpPath);
+    await store.load();
+    expect(store.size()).toBe(0);
+  });
+
+  it('skips malformed JSON lines without throwing', async () => {
+    const fs = await import('node:fs');
+    fs.writeFileSync(tmpPath, '{"type":"vector","data":{}\n'); // truncated JSON
+
+    const store = new VectorStore(tmpPath);
+    await store.load();
+    expect(store.size()).toBe(0);
+  });
+
+  it('save omits negVec when it carries no signal', async () => {
+    const fs = await import('node:fs');
+    const store = new VectorStore(tmpPath);
+    const ToolA = makeTool('alpha', 'first tool');
+    // No negEmbeddings supplied → negVec is zero-length → not persisted.
+    await store.add([ToolA], [[1, 0, 0]]);
+    await store.save();
+
+    const raw = fs.readFileSync(tmpPath, 'utf-8');
+    const record = JSON.parse(raw.trim());
+    expect(record.data.posVec).toBeDefined();
+    expect(record.data.negVec).toBeUndefined();
   });
 });

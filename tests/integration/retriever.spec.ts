@@ -133,3 +133,28 @@ describe('retrieve — debug breakdown', () => {
     expect(results[0].debug?.intent).toBeDefined();
   });
 });
+
+describe('retrieve — defaults + empty store + RRF fusion', () => {
+  it('uses default k=5 and threshold=0 when options are omitted', async () => {
+    // No options object → k defaults to 5, threshold defaults to 0.
+    const results = await retrieve('glob', embedder, store);
+    expect(results.length).toBe(3); // only 3 tools in the store, all below k=5
+  });
+
+  it('returns an empty list when the store has no vectors', async () => {
+    const emptyStore = new VectorStore();
+    const results = await retrieve('anything', embedder, emptyStore, { k: 5 });
+    expect(results).toEqual([]);
+  });
+
+  it('surfaces a tool that only the keyword signal catches (RRF fusion)', async () => {
+    // grep's description is "search for a regex pattern within files content".
+    // A query of "regex content within files" should surface grep via S3 even if
+    // S1 cosine is not the highest — this exercises the RRF path where a tool
+    // ranks on keyword overlap but not on cosine.
+    const results = await retrieve('regex content within files', embedder, store, { k: 3 });
+    const grepResult = results.find((r) => r.tool.name === 'grep');
+    expect(grepResult).toBeDefined();
+    expect(grepResult!.debug!.keyword).toBeGreaterThan(0);
+  });
+});

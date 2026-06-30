@@ -101,4 +101,21 @@ describe('keywordScore — composition contract', () => {
     const b = keywordScore('find files', GLOB_TOOL);
     expect(a).toBe(b);
   });
+
+  it('includes parameter descriptions in the scored text', () => {
+    // collectToolText flattens parameter descriptions — a query matching a
+    // parameter description should overlap. This exercises the properties
+    // branch (keyword-overlap.ts line 78).
+    const tool = makeTool('grep', 'search files', {
+      parameters: {
+        type: 'object',
+        properties: {
+          searchPath: { description: 'file path or glob pattern to search within' },
+          pattern: { description: 'regex pattern to search for' },
+        },
+      },
+    });
+    const score = keywordScore('regex pattern', tool);
+    expect(score).toBeGreaterThan(0);
+  });
 });

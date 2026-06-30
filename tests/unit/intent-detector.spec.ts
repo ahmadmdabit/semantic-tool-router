@@ -132,6 +132,54 @@ describe('detectIntent — dynamic rules (Layer 1)', () => {
     const hints = detectIntent('grep for files', CATALOG);
     expect(hints.reason).toContain('dynamic:grep');
   });
+
+  it('compiles a trigger as a regex when it contains metacharacters', () => {
+    // A trigger with regex metacharacters (e.g. a dot) must be compiled as a
+    // real regex, not escaped as a literal substring. This exercises the
+    // compileTrigger branch where needsRegex is true. Note: the trigger must
+    // still be a VALID regex — "file.ts" contains a metacharacter (.) and
+    // matches both "file.ts" and "file-ts" via the regex dot.
+    const regexCatalog: Tool[] = [
+      {
+        name: 'grep',
+        description: 'search files',
+        parameters: { type: 'object', properties: {} },
+        triggers: ['file.ts'], // the dot is a regex metacharacter
+        boosts: [],
+      },
+    ];
+    resetIntentCache();
+    // "find file.ts usage" contains "file.ts" — the dot in the trigger regex
+    // matches the literal dot in the query.
+    const hints = detectIntent('find file.ts usage', regexCatalog);
+    expect(hints.boostTools.has('grep')).toBe(true);
+    expect(hints.reason).toContain('dynamic:grep:file.ts');
+  });
+
+  it('picks the longest trigger when two tools match the same query', () => {
+    // Both tools match "change the file extension" but renameFile's trigger is
+    // longer. Longest-trigger-wins must select renameFile.
+    const catalog: Tool[] = [
+      {
+        name: 'editFile',
+        description: 'edit',
+        parameters: { type: 'object', properties: {} },
+        triggers: ['change the file'], // length 14
+        boosts: [],
+      },
+      {
+        name: 'renameFile',
+        description: 'rename',
+        parameters: { type: 'object', properties: {} },
+        triggers: ['change the file extension'], // length 24
+        boosts: [],
+      },
+    ];
+    resetIntentCache();
+    const hints = detectIntent('change the file extension from .js to .ts', catalog);
+    expect(hints.boostTools.has('renameFile')).toBe(true);
+    expect(hints.reason).toContain('dynamic:renameFile');
+  });
 });
 
 describe('detectIntent — builtin baselines (Layer 2)', () => {

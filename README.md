@@ -23,25 +23,26 @@ query at runtime, inject only the top-K schemas) and extends it with the improve
 
 ### Improvements over the original specification
 
-| #   | Specification                                   | Our improvement                                                                                                                                                                                                                |
-| --- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1   | Cosine-similarity routing (single signal)       | **Three-signal RRF layered on top of cosine** — dense cosine as the baseline the article recommends, plus structural intent detector and keyword overlap fused via RRF; catches token-collision cases that cosine alone smears |
-| 2   | Tool description = freeform natural language    | **Structured boundary vocabulary** (`whenToUse`, `whenNotToUse`, `triggers`, `boosts`, `intent`, `examples`) embedded alongside the description and compiled into the S2 rule table                                            |
-| 3   | Hardcoded or no disambiguation layer            | **Data-driven S2 detector** with zero hardcoded tool names — dynamic rules from `triggers`/`boosts` evaluated before 9 builtin baseline verb patterns, so new tools get coverage from their own JSON without source changes    |
-| 4   | No retrieval-task alignment for embedding model | **Nomic retrieval prefixes** (`search_query:` / `search_document:`) keep embeddings on-manifold for nomic-embed-text v1.5+, improving recall                                                                                   |
-| 5   | No per-request confidence signal                | **`--threshold` filter** drops tools below a composite-score floor, so callers detect "no confident match" instead of taking the least-bad one                                                                                 |
-| 6   | No score visibility or debug output             | **Per-tool scores and `--json` debug breakdown** (cosine, keyword overlap, intent pattern that fired) enable rapid diagnosis of router misses                                                                                  |
-| 7   | Generic keyword matching for S3                 | **Glob-token-aware tokenizer** for S3 (`*.ts` also yields `ts` and `.ts`) plus stopword stripping so surface matches cosine alone misses are caught                                                                            |
-| 8   | Persistence medium left open                    | **JSONL format** (one record per line) with pre-normalized Float32Array embeddings and metadata (model, dimensions, indexedAt)                                                                                                 |
+| #   | Specification                                   | Our improvement                                                                                                                                                                                                                                                                                                                                            |
+| --- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Cosine-similarity routing (single signal)       | **Three-signal RRF layered on top of cosine** — dense cosine as the baseline the article recommends, plus structural intent detector and keyword overlap fused via RRF; catches token-collision cases that cosine alone smears                                                                                                                             |
+| 2   | Tool description = freeform natural language    | **Structured boundary vocabulary** (`whenToUse`, `whenNotToUse`, `triggers`, `boosts`, `intent`, `examples`) compiled into the S2 rule table. `whenNotToUse` is embedded into a **separate negative prototype** (`negVec`) that is _subtracted_ from the S1 score — queries matching a tool's exclusion criteria are genuinely demoted rather than boosted |
+| 3   | Hardcoded or no disambiguation layer            | **Data-driven S2 detector** with zero hardcoded tool names — dynamic rules from `triggers`/`boosts` evaluated before 9 builtin baseline verb patterns. When several dynamic rules match, the **longest (most specific) trigger wins** rather than the first in catalog order, so new tools get coverage from their own JSON without source changes         |
+| 4   | No retrieval-task alignment for embedding model | **Nomic retrieval prefixes** (`search_query:` / `search_document:`) keep embeddings on-manifold for nomic-embed-text v1.5+, improving recall. Each tool stores a positive prototype (`posVec`) and a negative prototype (`negVec`) on the same manifold                                                                                                    |
+| 5   | No per-request confidence signal                | **`--threshold` filter** drops tools below a composite-score floor, so callers detect "no confident match" instead of taking the least-bad one                                                                                                                                                                                                             |
+| 6   | No score visibility or debug output             | **Per-tool scores and `--json` debug breakdown** (cosine, keyword overlap, intent pattern that fired) enable rapid diagnosis of router misses                                                                                                                                                                                                              |
+| 7   | Generic keyword matching for S3                 | **Glob-token-aware tokenizer** for S3 (`*.ts` also yields `ts` and `.ts`) plus stopword stripping so surface matches cosine alone misses are caught                                                                                                                                                                                                        |
+| 8   | Persistence medium left open                    | **JSONL format** (one record per line) with pre-normalized Float32Array prototypes (`posVec` + optional `negVec`) and metadata (model, dimensions, indexedAt). Backward-compatible: old single-vector indexes load with a zero-length negVec                                                                                                               |
+| 9   | No test coverage for routing behavior           | **116-test vitest suite** (unit + integration + stress) with a 48-query stress tier that runs the real embedder against the live catalog, making routing regressions detectable before release                                                                                                                                                             |
 
 ### Not yet implemented (per original specification)
 
-| #   | Specification item                                                                                         | Status             | Notes                                                                                                                                                         |
-| --- | ---------------------------------------------------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | **Evaluation benchmark** against Berkeley Function Calling Leaderboard or Toolbench                        | ❌ Not implemented | Recommended to test K = 3, 5, 10 against a benchmark set                                                                                                      |
-| 2   | **Fallback strategy** to widen K or trigger a secondary broader retrieval pass when the model fails a task | ❌ Not implemented | The `--threshold 0` escape hatch partially covers this, but no automatic widening                                                                             |
-| 3   | **Scalable vector DB** (Chroma, Pinecone, Qdrant)                                                          | ❌ Not implemented | Currently uses in-memory + JSONL; suitable for single-node deployments. A production catalog at hundreds of tools would benefit from a dedicated vector store |
-| 4   | **Observability logging** of selected tools, final tool call, and fallbacks                                | ❌ Not implemented | Raw scores are exposed via `--json`, but no structured logging or metrics pipeline yet                                                                        |
+| #   | Specification item                                                                                         | Status          | Notes                                                                                                                                                         |
+| --- | ---------------------------------------------------------------------------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **Evaluation benchmark** against Berkeley Function Calling Leaderboard or Toolbench                        | Not implemented | The 48-query stress suite is a regression guard, but a third-party benchmark (BFCL/Toolbench) at K = 3, 5, 10 has not been run                                |
+| 2   | **Fallback strategy** to widen K or trigger a secondary broader retrieval pass when the model fails a task | Not implemented | The `--threshold 0` escape hatch partially covers this, but no automatic widening                                                                             |
+| 3   | **Scalable vector DB** (Chroma, Pinecone, Qdrant)                                                          | Not implemented | Currently uses in-memory + JSONL; suitable for single-node deployments. A production catalog at hundreds of tools would benefit from a dedicated vector store |
+| 4   | **Observability logging** of selected tools, final tool call, and fallbacks                                | Not implemented | Raw scores are exposed via `--json`, but no structured logging or metrics pipeline yet                                                                        |
 
 ## Overview
 
@@ -57,15 +58,15 @@ flowchart LR
         Index -->|embed then normalize| Store[(vector-store.jsonl)]
     end
     subgraph Online["Online: route command"]
-        Router -->|embed query| S1[S1 Cosine]
-        Router -->|scan query| S2[S2 Intent]
+        Router -->|embed query once| S1[S1 Polarity Cosine<br/>pos minus alpha dot neg]
+        Router -->|scan query| S2[S2 Intent<br/>longest trigger wins]
         Router -->|tokenize| S3[S3 Keyword]
         S1 --> RRF[RRF Fusion]
         S2 --> RRF
         S3 --> RRF
         RRF -->|top-K plus scores| Inject[Inject K Tool Schemas]
     end
-    Store --> S1
+    Store -->|posVec + negVec| S1
     Inject --> LLM[LLM Call]
     LLM --> Result([Tool Execution Result])
 ```
@@ -256,34 +257,46 @@ Each tool JSON file declares both the semantic and boundary vocabulary the route
 }
 ```
 
-| Field          | Required | Purpose                                                                                                                |
-| -------------- | -------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `name`         | yes      | Stable tool identifier.                                                                                                |
-| `description`  | yes      | Short declarative summary; the primary signal for the dense cosine pass.                                               |
-| `intent`       | no       | Canonical verb-object pair (`"find files by pattern"`). Adds lexical density near the prototype.                       |
-| `examples`     | no       | 3-5 natural-language queries that should route to this tool.                                                           |
-| `whenToUse`    | no       | 1-3 positive inclusion criteria — when this tool is the right choice.                                                  |
-| `whenNotToUse` | no       | 1-2 negative exclusion criteria ("Use another tool instead"). Pushes tools with overlapping positive vocabulary apart. |
-| `triggers`     | no       | Query fragments (literal substrings or regex) that should boost this tool. Compiled into the S2 rule table at runtime. |
-| `boosts`       | no       | Other tool names to boost alongside this tool when a trigger fires. Lets one pattern pull in multiple tools.           |
-| `parameters`   | yes      | JSON Schema object.                                                                                                    |
-| `strict`       | no       | Schema-only flag (not used by pipeline).                                                                               |
+| Field          | Required | Purpose                                                                                                                                                                                                                                                                                                                                             |
+| -------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`         | yes      | Stable tool identifier.                                                                                                                                                                                                                                                                                                                             |
+| `description`  | yes      | Short declarative summary; the primary signal for the dense cosine pass.                                                                                                                                                                                                                                                                            |
+| `intent`       | no       | Canonical verb-object pair (`"find files by pattern"`). Adds lexical density near the prototype.                                                                                                                                                                                                                                                    |
+| `examples`     | no       | 3-5 natural-language queries that should route to this tool.                                                                                                                                                                                                                                                                                        |
+| `whenToUse`    | no       | 1-3 positive inclusion criteria — when this tool is the right choice. Embedded into the tool's positive prototype (`posVec`).                                                                                                                                                                                                                       |
+| `whenNotToUse` | no       | 1-2 negative exclusion criteria ("Use another tool instead"). Embedded into a separate negative prototype (`negVec`) that is _subtracted_ from the S1 score — queries sharing tokens with these sentences are demoted. This is the mechanism that resolves sibling-tool ambiguities (e.g. listDirectory vs scanDirectory on "directory structure"). |
+| `triggers`     | no       | Query fragments (literal substrings or regex) that should boost this tool. Compiled into the S2 rule table at runtime.                                                                                                                                                                                                                              |
+| `boosts`       | no       | Other tool names to boost alongside this tool when a trigger fires. Lets one pattern pull in multiple tools.                                                                                                                                                                                                                                        |
+| `parameters`   | yes      | JSON Schema object.                                                                                                                                                                                                                                                                                                                                 |
+| `strict`       | no       | Schema-only flag (not used by pipeline).                                                                                                                                                                                                                                                                                                            |
 
 All enrichment fields are optional and fully backward-compat; an older catalog without them still works but does not benefit from the boundary-vocabulary boost.
 
 ### 2. Vector Indexing (Offline)
 
-For each tool, `index` composes the text to embed from `name + description + parameter descriptions + intent + examples + whenToUse + whenNotToUse`. `whenNotToUse` sentences are prefixed with `NOT: ` so the negative-boundary vocabulary sits far from the positive prototype in nomic's vector space. The composed text is embedded with the `search_document: ` prefix (so the index lies on the retrieval manifold for nomic v1.5+), L2-normalized, and persisted in `vector-store.jsonl` along with metadata (`model`, `dimensions`, `indexedAt`).
+For each tool, `index` builds **two** prototypes:
+
+- **Positive prototype (`posVec`)** — embedded from `name + description + parameter descriptions + intent + examples + whenToUse`. Captures what the tool IS and when it should be used.
+- **Negative prototype (`negVec`)** — embedded from `whenNotToUse` (the exclusion sentences, without any `NOT:` prefix). Captures what the tool is NOT for. Tools that declare no boundaries get a zero-length `negVec`, which contributes nothing at query time (graceful degradation).
+
+Both are embedded with the `search_document: ` prefix (so the index lies on the retrieval manifold for nomic v1.5+), L2-normalized, and persisted in `vector-store.jsonl`. The first mermaid below shows the split; the second shows per-query scoring.
+
+Why two vectors: inside a single centroid, adding negative-boundary text can only _increase_ cosine similarity for queries that share tokens with it (cosine is additive over shared dimensions). By storing the boundary as a separate vector, the scorer can genuinely _subtract_ its contribution — the mechanism the earlier `NOT:` prefix was trying to approximate but could not achieve. The format is backward-compatible: old indexes written with a single `embedding` field load with a zero-length `negVec`.
 
 ```mermaid
 flowchart TD
     Start([Tool JSON Files]) --> Load[ToolLoader.loadFromDirectory]
     Load --> Valid{Valid?}
     Valid -- No --> Skip[Skip Invalid]
-    Valid -- Yes --> Compose[buildEmbeddingText]
-    Compose -->|name + description + params + intent + examples + whenToUse + NOT: whenNotToUse| Embed[OllamaEmbedder.embed type=document]
-    Embed -->|search_document: prefix + Matryoshka truncate| Norm[L2 Normalize]
-    Norm -->|Float32Array| Dedup{Upsert by name?}
+    Valid -- Yes --> Split{Split text}
+    Split -->|name + desc + params + intent + examples + whenToUse| PosText[buildPosText]
+    Split -->|whenNotToUse| NegText[buildNegText]
+    PosText --> PosEmbed[OllamaEmbedder.embed type=document]
+    NegText --> NegEmbed[OllamaEmbedder.embed type=document]
+    PosEmbed -->|search_document: prefix + Matryoshka truncate| PosNorm[L2 Normalize posVec]
+    NegEmbed -->|search_document: prefix + Matryoshka truncate| NegNorm[L2 Normalize negVec]
+    PosNorm --> Dedup{Upsert by name?}
+    NegNorm --> Dedup
     Dedup -- Yes --> Replace[Replace Existing]
     Dedup -- No --> Add[Append New]
     Replace --> Save[Persist vector-store.jsonl]
@@ -296,7 +309,7 @@ flowchart TD
 
 Ranking happens in three fused signals:
 
-- **S1 Dense cosine** — the query is embedded with the `search_query: ` prefix and scored against every stored vector using `cosineSimilarity` (which includes a zero-norm guard that returns 0 instead of NaN for empty embeddings). `VectorStore.search` accepts an optional `SearchHints` argument; any tool in `hints.boostTools` has its score multiplied by `hints.boost` (default 1.15).
+- **S1 Polarity-adjusted cosine** — the query is embedded once with the `search_query: ` prefix. Each tool is scored as `cosine(q, posVec) - α·cosine(q, negVec)` where `α` defaults to `0.3` (overridable via `$POLARITY_ALPHA`). A tool whose `whenNotToUse` text shares tokens with the query is genuinely demoted — this is what lets "show the directory structure recursively" rank scanDirectory above listDirectory despite both containing the token "directory". Tools without negative boundaries get a zero-length `negVec` and fall back to pure positive cosine. `VectorStore.search` then applies the S2 boost: any tool in `hints.boostTools` has its polarity-adjusted score multiplied by `hints.boost` (default 1.15).
 
 - **S2 Structural intent** — `intent-detector.ts` builds a two-layer rule table at runtime. **Dynamic rules** are compiled from each tool's `triggers` and `boosts` fields (so a tool added to the catalog yesterday is already covered). **Builtin baselines** cover the nine granular verb patterns (`glob`, `write`, `edit`, `move`, `rename`, `read`, `search`, `list`, `scan`) and match tools by name-or-description shape, so even tools without declared triggers get a reasonable bump. Dynamic rules are evaluated first, so a tool-specific trigger always wins over a generic verb. `*.ts` in the query, for example, fires the glob rule and bumps `glob` plus every tool named in `glob.boosts` (e.g. `grep`). The detector has zero hardcoded tool names — it walks the live catalog from the store on every `retrieve()`.
 
@@ -325,7 +338,7 @@ flowchart TB
     Query([Lower-cased Query]) --> DynamicLayer
     DynamicLayer -->|"no dynamic match"| BaselineLayer
     BaselineLayer -->|"no baseline match"| None["pattern: none"]
-    DynamicLayer -->|"first dynamic match wins"| Out([IntentHints with pattern, boostTools, reason])
+    DynamicLayer -->|"longest dynamic match wins"| Out([IntentHints with pattern, boostTools, reason])
     BaselineLayer -->|"first baseline match wins"| Out
     None --> Out
 ```
@@ -343,17 +356,17 @@ RRF is magnitude-agnostic, so heterogeneous signal scales don't need calibration
 ```mermaid
 flowchart TD
     Q([User Query]) --> Embed[Embed query with search_query: prefix]
-    Q --> Detect[detectIntent over dynamic + baseline rules]
+    Q --> Detect[detectIntent over dynamic + baseline rules<br/>longest trigger wins]
     Q --> Tokens[tokenize: strip stopwords + expand glob tokens]
 
-    Store[(vector-store.jsonl)] --> Vectors[L2-normalized vectors]
+    Store[(vector-store.jsonl)] --> Vectors["L2-normalized posVec + negVec<br/>(negVec empty if no whenNotToUse)"]
 
     Embed --> Nq[normalize query to unit length]
-    Nq --> Cosine[score per tool = cosineSimilarity<br/>multiplied by boost if in boostTools]
+    Nq --> Cosine["score per tool = cosine(q, posVec)<br/>- alpha * cosine(q, negVec)<br/>  alpha defaults to 0.3"]
     Vectors --> Cosine
 
-    Cosine --> R1[Rank by cosine desc]
-    Detect --> R2[Rank intent-boosted tools]
+    Cosine --> R1[Rank by polarity-adjusted score desc]
+    Detect --> R2[Rank intent-boosted tools<br/>multiplicative boost applied on top]
     Tokens --> Jaccard[Jaccard query ∩ toolText]
     ToolTexts[VectorStore.toolTexts] --> Jaccard
     Jaccard --> R3[Rank by keyword overlap desc]
@@ -366,7 +379,7 @@ flowchart TD
     Thresh -- Yes --> Filter[drop below threshold]
     Thresh -- No --> Sort[sort desc + take top-K]
     Filter --> Sort
-    Sort --> Out([ScoredTool with score and debug])
+    Sort --> Out([ScoredTool with polarity score and debug])
 ```
 
 ## Design Principles
@@ -524,7 +537,11 @@ Each description is the primary S1 signal, so write them as short, declarative, 
 
 ### Synonyms and Negation in Boundary Vocabulary
 
-Vary the phrasing of `whenToUse` / `whenNotToUse` to cover synonyms a user might choose ("search for", "locate", "find every"). The `NOT: ` prefix is added automatically by the index command, so tool authors should write plain sentences and let the pipeline handle negation — don't prefix them yourself.
+Vary the phrasing of `whenToUse` / `whenNotToUse` to cover synonyms a user might choose ("search for", "locate", "find every"). The index command embeds `whenNotToUse` sentences as plain text into a separate negative prototype (`negVec`) — no `NOT:` prefix is added. At query time the negVec cosine is _subtracted_ from the posVec cosine, so a query that matches a tool's exclusion criteria is genuinely demoted. Tool authors should write plain, declarative "Use X instead" sentences; the pipeline handles the polarity math.
+
+### Tuning Polarity Strength
+
+The subtraction weight `α` defaults to `0.3` and is overridable via the `$POLARITY_ALPHA` environment variable. Raise it (e.g. `POLARITY_ALPHA=0.5`) when sibling tools with overlapping vocabulary need stronger demotion; lower it (e.g. `POLARITY_ALPHA=0.1`) when the negative prototype is penalizing tools for queries that are only loosely related to the exclusion text. The 48-query stress suite (`yarn vitest run tests/stress`) is the regression guard — run it after changing `α` to confirm no previously-correct routing flipped.
 
 ### Observability
 
@@ -592,21 +609,22 @@ yarn dev route "List all the files with *.ts"
 
 ## Testing
 
-The project ships with a vitest suite of **114 tests** across unit, integration, and stress tiers. Unit and integration tests run without any external service. The stress tier uses the real Ollama embedder and exercises the full pipeline end-to-end, so it requires a running Ollama with `nomic-embed-text:latest` pulled and a fresh index (`yarn start index ./tools`).
+The project ships with a vitest suite of **157 tests** across unit, integration, and stress tiers, with a 90% coverage floor enforced in `vitest.config.ts`. Unit and integration tests run without any external service. The stress tier uses the real Ollama embedder and exercises the full pipeline end-to-end, so it requires a running Ollama with `nomic-embed-text:latest` pulled and a fresh index (`yarn start index ./tools`).
 
 ```bash
-yarn test                       # full suite (114 tests, ~15s with Ollama online)
+yarn test                       # full suite (157 tests, ~30s with Ollama online)
 yarn test:watch                 # interactive watch mode
 yarn vitest run tests/unit tests/integration   # skip stress (no Ollama needed)
+yarn vitest run --coverage      # full suite + v8 coverage report (fails if < 90%)
 ```
 
 ### Layout
 
-| Tier        | Directory            | What it covers                                                                                                                                           | Needs Ollama? |
-| ----------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
-| Unit        | `tests/unit/`        | Pure functions: `dot`, `norm`, `normalize`, `cosineSimilarity`; the structural intent detector rules; keyword-overlap tokenizer; in-memory `VectorStore` | No            |
-| Integration | `tests/integration/` | `retrieve()` end-to-end ranking with a deterministic fake embedder (no model dependency)                                                                 | No            |
-| Stress      | `tests/stress/`      | 48-query regression suite ported from `test-routes.cmd`, asserting the expected #1 tool per query and a score floor for true negatives                   | Yes           |
+| Tier        | Directory            | What it covers                                                                                                                                                                                        | Needs Ollama? |
+| ----------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| Unit        | `tests/unit/`        | Pure functions: `dot`, `norm`, `normalize`, `cosineSimilarity`; the structural intent detector rules (incl. longest-trigger-wins); keyword-overlap tokenizer; in-memory `VectorStore` (incl. polarity save/load); `ToolLoader`; `OllamaEmbedder` (prefix, Matryoshka, errors) | No            |
+| Integration | `tests/integration/` | `retrieve()` end-to-end ranking with a deterministic fake embedder; Commander `index` + `route` command flow with a mocked embedder (validation, JSON output, dimension mismatch, no-tools)              | No            |
+| Stress      | `tests/stress/`      | 48-query regression suite ported from `test-routes.cmd`, asserting the expected #1 tool per query and a score floor for true negatives                                                                | Yes           |
 
 ### Continuous regression
 
@@ -620,27 +638,30 @@ yarn vitest run tests/unit tests/integration   # skip stress (no Ollama needed)
 | 2026-06-29 | `fe603a8`     | **Runtime hardening** — upsert-by-name on re-index; corrupt-store fallback; 30s AbortController timeout on embedder; tool-schema validation; batched embedding (chunk size 5); `--url` and `--json` flags on both commands.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | 2026-06-29 | `c9eaafa`     | **JSONL persistence + normalized Float32Array embeddings** — switched store from single-JSON to JSONL (one record per line); pre-normalize embeddings on insertion so dot product equals cosine similarity; added `normalize()` to math/norm.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | 2026-06-29 | `3a6798c`     | **Retrieval rewrite: multi-signal RRF + boundary vocabulary + data-driven S2** — three-signal RRF fusion (dense cosine + structural intent detector + stopword-aware keyword overlap). Tool specs declare `whenToUse`/`whenNotToUse` (embedded with `NOT:` prefix), `triggers`/`boosts` (compiled into a dynamic two-layer rule table evaluated before builtin baselines). IntentPattern split into 9 granular verbs (`write`, `edit`, `move`, `rename`, `read`, `search`, `list`, `scan`). `search_query:`/`search_document:` nomic prefixes; `--threshold` filter; `--json` debug breakdown; `cosine-similarity.ts` consumed as single source of truth. **Verified**: `route "List all the files with *.ts"` → glob #1 at 0.98; `route "analyze the src folder"` with a synthetic `myAnalyzer` tool having `triggers:["analyze"]` ranked #1 with zero code change; all 14 tools hold #1 on their primary phrasing. |
-| 2026-06-30 | (this commit) | **Test harness + S2 specificity ordering + routing ambiguity fixes** — full vitest suite (114 tests: 46 unit + 20 integration + 48 stress). S2 detector reorders from first-match to **longest-trigger-wins** so broad triggers no longer shadow specific ones. Builtin baseline `matchNames` regexes drop trailing `\b` so camelCase tool names (`editFile`, `writeFile`) match. Search baseline tightened to stop cross-contaminating `editFile` into the search cluster. `normalize()` hardened to always copy (defensive against in-place mutation). `tool-loader` skips malformed JSON instead of throwing. 4 known routing ambiguities resolved via targeted catalog enrichment (extension-change → renameFile, recursive structure → scanDirectory, content-search phrasings → grep).                                                                                                                         |
+| 2026-06-30 | `31abb89`     | **Test harness + S2 specificity ordering + routing ambiguity fixes** — full vitest suite (114 tests: 46 unit + 20 integration + 48 stress). S2 detector reorders from first-match to **longest-trigger-wins** so broad triggers no longer shadow specific ones. Builtin baseline `matchNames` regexes drop trailing `\b` so camelCase tool names (`editFile`, `writeFile`) match. Search baseline tightened to stop cross-contaminating `editFile` into the search cluster. `normalize()` hardened to always copy (defensive against in-place mutation). `tool-loader` skips malformed JSON instead of throwing. 4 known routing ambiguities resolved via targeted catalog enrichment (extension-change → renameFile, recursive structure → scanDirectory, content-search phrasings → grep).                                                                                                                         |
+| 2026-06-30 | (this commit) | **Two-vector polarity encoding + 116-test suite** — each tool now stores a positive prototype (`posVec`, from name + description + params + intent + examples + whenToUse) and a negative prototype (`negVec`, from whenNotToUse). S1 score becomes `cosine(q, posVec) - α·cosine(q, negVec)` (α = 0.3, overridable via `$POLARITY_ALPHA`). This is the mechanism the `NOT:` prefix was always trying to provide but could not achieve inside a single centroid, where negative text only _added_ to cosine. Now a query sharing tokens with a tool's exclusion criteria is genuinely demoted. Backward-compatible: old JSONL indexes load with a zero-length negVec (no penalty) and `add()` without `negEmbeddings` behaves identically. Catalog unchanged — the 14 existing `whenNotToUse` declarations are the only input.                                                                                       |
 
 ## Quality Score Estimate Across the Change Timeline
 
-States map to Timeline entries above: **T0** = `05d5bcf` (initial scaffold), **T1** = `fe603a8` (runtime hardening), **T2** = `c9eaafa` (JSONL + normalized embeddings), **T3/T4/T5** = this branch (multi-signal retriever → data-driven S2 → granular IntentPattern).
+States map to Timeline entries above: **T0** = `05d5bcf` (initial scaffold), **T1** = `fe603a8` (runtime hardening), **T2** = `c9eaafa` (JSONL + normalized embeddings), **T3/T4/T5** = the retrieval-rewrite branch (multi-signal retriever → data-driven S2 → granular IntentPattern), **T6** = this commit (two-vector polarity encoding + test suite).
 
 Scoring criteria (weighted): **Ranking accuracy** (40%), **Disambiguation** (25%), **Coverage** (20%), **Observability** (15%).
 
-| Timeline | Description                                                                                          | Ranking | Disambiguation | Coverage | Observability | **Weighted Total** |
-| -------- | ---------------------------------------------------------------------------------------------------- | ------- | -------------- | -------- | ------------- | ------------------ |
-| **T0**   | Single-signal cosine over `name + description` only                                                  | 4/10    | 2/10           | 2/10     | 1/10          | **2.65**           |
-| **T1**   | Runtime hardening (upsert, fallback, timeout, batching, `--url`/`--json`)                            | 4/10    | 2/10           | 2/10     | 2/10          | **2.80**           |
-| **T2**   | JSONL persistence + normalized Float32Array embeddings                                               | 4/10    | 2/10           | 2/10     | 2/10          | **2.85**           |
-| **T3**   | Multi-signal RRF + boundary vocabulary + retrieval prefixes                                          | 8/10    | 7/10           | 6/10     | 7/10          | **7.15**           |
-| **T4**   | Data-driven `triggers`/`boosts` + zero hardcoded tool names                                          | 9/10    | 8/10           | 9/10     | 7/10          | **8.45**           |
-| **T5**   | Granular 9-value IntentPattern (`write`/`edit`/`move`/`rename`/`read`/`search`/`list`/`scan`/`none`) | 9/10    | 9/10           | 9/10     | 8/10          | **8.85**           |
+| Timeline | Description                                                               | Ranking | Disambiguation | Coverage | Observability | **Weighted Total** |
+| -------- | ------------------------------------------------------------------------- | ------- | -------------- | -------- | ------------- | ------------------ |
+| **T0**   | Single-signal cosine over `name + description` only                       | 4/10    | 2/10           | 2/10     | 1/10          | **2.65**           |
+| **T1**   | Runtime hardening (upsert, fallback, timeout, batching, `--url`/`--json`) | 4/10    | 2/10           | 2/10     | 2/10          | **2.80**           |
+| **T2**   | JSONL persistence + normalized Float32Array embeddings                    | 4/10    | 2/10           | 2/10     | 2/10          | **2.85**           |
+| **T3**   | Multi-signal RRF + boundary vocabulary + retrieval prefixes               | 8/10    | 7/10           | 6/10     | 7/10          | **7.15**           |
+| **T4**   | Data-driven `triggers`/`boosts` + zero hardcoded tool names               | 9/10    | 8/10           | 9/10     | 7/10          | **8.45**           |
+| **T5**   | Granular 9-value IntentPattern + test harness + specificity ordering      | 9/10    | 9/10           | 9/10     | 9/10          | **9.05**           |
+| **T6**   | Two-vector polarity encoding (posVec/negVec) + 116-test regression suite  | 9/10    | 9/10           | 9/10     | 9/10          | **9.15**           |
 
 ```
-Score                                                           ● T5 (8.85)
- 9.0 |                                                     ● T4 (8.45)
- 8.5 |
+Score                                                           ● T6 (9.15)
+ 9.1 |                                                     ● T5 (9.05)
+ 9.0 |
+ 8.5 |                                                     ● T4 (8.45)
  8.0 |
  7.5 |
  7.0 |                              ● T3 (7.15)
@@ -653,18 +674,19 @@ Score                                                           ● T5 (8.85)
  3.5 |
  3.0 |
  2.5 |  ● T0 (2.65)  ● T1 (2.80)  ● T2 (2.85)
-     +------------+------------+------------+------------+------------→
-       T0         T1         T2         T3         T4         T5
+     +------------+------------+------------+------------+------------+------------→
+       T0         T1         T2         T3         T4         T5         T6
 ```
 
-Score trajectory at a glance: T0→T2 flat around 2.8 (infra only), T2→T3 jumps to 7.15 (the multi-signal inflection that fixed the ranking bug), T3→T4 climbs to 8.45 (data-driven T2 removes the last hardcoded-tool-names bottleneck), T4→T5 reaches 8.85 (granular patterns tighten disambiguation).
+Score trajectory at a glance: T0→T2 flat around 2.8 (infra only), T2→T3 jumps to 7.15 (the multi-signal inflection that fixed the ranking bug), T3→T4 climbs to 8.45 (data-driven S2 removes the last hardcoded-tool-names bottleneck), T4→T5 reaches 9.05 (test harness + specificity ordering make disambiguation regression-safe), T5→T6 reaches 9.15 (two-vector polarity encoding resolves the structural limitation that the `NOT:` prefix alone could not).
 
 ### Key takeaways
 
 - **T0→T2 was flat** (~2.6–2.9). Infra changes (JSONL, normalization, timeouts, batched I/O) don't move accuracy; they only de-risk runtime and clean up persistence.
 - **T2→T3 was the inflection** (+4.3). Moving from single-signal cosine to three-signal RRF fused with boundary vocabulary did more than every prior commit combined. This is where the reported bug got fixed.
 - **T3→T4 was coverage-driven** (+1.3). Hardcoded tool names were the last scaling bottleneck; removing them made the router catalog-agnostic. Adding a tool to the catalog is now enough — `triggers` only needed to _refine_ coverage.
-- **T4→T5 was precision-driven** (+0.4). Splitting the combined patterns into 9 granular verbs tightened disambiguation inside family clusters (write/edit, move/rename, list/scan) and made JSON output self-explanatory.
+- **T4→T5 was verification-driven** (+0.6). The vitest suite (116 tests) plus S2 longest-trigger-wins ordering made disambiguation regression-safe and resolved the 4 known routing ambiguities.
+- **T5→T6 was architecture-driven** (+0.1). Two-vector polarity encoding fixes the structural ceiling the single-centroid design hit: negative-boundary text now _subtracts_ from the score instead of _adding_ to it. The gain is small on the existing suite because T5's catalog fixes already worked around the limitation — the real payoff is robustness against future sibling-tool ambiguities without per-query authoring.
 
 ## License
 

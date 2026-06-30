@@ -4,13 +4,10 @@ import { VectorStore } from '../vector/vector-store.js';
 import { ToolLoader } from '../tools/tool-loader.js';
 import { Tool, EmbedType } from '../types.js';
 
-// Builds the text that gets embedded for a tool. Enriched vs. the old
-// `name + description` form: includes parameter descriptions, the optional
-// `intent` tag, and declared `examples`. Each of these gives the embedder a
-// larger, more lexically-varied surface — which is what lets R1/R7 signals
-// resolve queries like "list all *.ts files" toward glob despite token
-// collision against listDirectory/readFile/moveFile.
-function buildEmbeddingText(tool: Tool): string {
+// Builds the POSITIVE prototype text: everything that describes what the tool
+// IS and when it should be used. This is embedded into posVec, the vector the
+// query is compared against for the "match" half of the S1 score.
+function buildPosText(tool: Tool): string {
   const parts: string[] = [tool.name, tool.description];
 
   // Flatten the parameter descriptions so glob's `*.ts`, grep's
@@ -28,18 +25,19 @@ function buildEmbeddingText(tool: Tool): string {
 
   if (tool.intent) parts.push(tool.intent);
   if (tool.examples && tool.examples.length > 0) parts.push(tool.examples.join('. '));
-
-  // Boundary vocabulary: positive inclusion criteria and explicit
-  // exclusion criteria. The "NOT: " prefix on whenNotToUse pushes negative
-  // sentences away from the positive-prototype region in nomic's vector
-  // space, so "do NOT use glob to read a file" sits far from the glob
-  // prototype and near the readFile one.
   if (tool.whenToUse && tool.whenToUse.length > 0) parts.push(tool.whenToUse.join('. '));
-  if (tool.whenNotToUse && tool.whenNotToUse.length > 0) {
-    parts.push(tool.whenNotToUse.map((s) => `NOT: ${s}`).join('. '));
-  }
 
   return parts.filter(Boolean).join('. ');
+}
+
+// Builds the NEGATIVE prototype text: what the tool is NOT for. This is
+// embedded into negVec, the vector that gets SUBTRACTED from the S1 score
+// when the query shares tokens with the tool's exclusion criteria. Returns an
+// empty string when the tool declares no boundaries — the caller then stores a
+// zero-length negVec and polarity contributes nothing.
+function buildNegText(tool: Tool): string {
+  if (!tool.whenNotToUse || tool.whenNotToUse.length === 0) return '';
+  return tool.whenNotToUse.join('. ');
 }
 
 export function createIndexCommand(): Command {
@@ -68,19 +66,28 @@ export function createIndexCommand(): Command {
       const store = new VectorStore(options.output);
 
       console.log(`Generating embeddings (model: ${options.model}, dimensions: ${dimensions})...`);
-      const embeddings: number[][] = [];
+      const posEmbeddings: number[][] = [];
+      const negEmbeddings: number[][] = [];
       const batchSize = 5;
       const embedType: EmbedType = 'document';
 
       for (let i = 0; i < tools.length; i += batchSize) {
         const batch = tools.slice(i, i + batchSize);
-        const batchEmbeddings = await Promise.all(batch.map(async (tool) => {
-          const text = buildEmbeddingText(tool);
-          const embedding = await embedder.embed(text, embedType);
-          console.log(`  Embedded: ${tool.name}`);
-          return embedding;
-        }));
-        embeddings.push(...batchEmbeddings);
+        const [batchPos, batchNeg] = await Promise.all([
+          Promise.all(batch.map((tool) => embedder.embed(buildPosText(tool), embedType))),
+          // Negative text is embedded with the same document prefix so the
+          // negVec lives on the same manifold as posVec — polarity subtraction
+          // is only meaningful when both vectors are in the same space.
+          Promise.all(batch.map(async (tool) => {
+            const negText = buildNegText(tool);
+            return negText ? embedder.embed(negText, embedType) : [];
+          })),
+        ]);
+        batchPos.forEach((emb, idx) => {
+          posEmbeddings.push(emb);
+          negEmbeddings.push(batchNeg[idx]);
+          console.log(`  Embedded: ${batch[idx].name}`);
+        });
       }
 
       store.setMetadata({
@@ -89,7 +96,7 @@ export function createIndexCommand(): Command {
         indexedAt: new Date().toISOString(),
       });
 
-      await store.add(tools, embeddings);
+      await store.add(tools, posEmbeddings, negEmbeddings);
       await store.save();
 
       console.log(`Index saved to ${options.output} (${store.size()} vectors)`);

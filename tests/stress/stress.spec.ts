@@ -132,23 +132,30 @@ describe('stress regression (real embedder, real catalog)', () => {
     }
 
     // Build an in-memory index from the real catalog using the real embedder.
+    // Mirrors index.command.ts: positive and negative prototypes are embedded
+    // separately so the S1 score can subtract the negative-prototype cosine.
     const tools = ToolLoader.loadFromDirectory(TOOLS_DIR);
     store = new VectorStore();
-    const embeddings: number[][] = [];
+    const posEmbeddings: number[][] = [];
+    const negEmbeddings: number[][] = [];
     for (const tool of tools) {
-      // Replicate buildEmbeddingText() so dense + keyword see identical vocab.
-      const parts = [tool.name, tool.description];
-      if (tool.intent) parts.push(tool.intent);
-      if (tool.examples?.length) parts.push(tool.examples.join('. '));
-      if (tool.whenToUse?.length) parts.push(tool.whenToUse.join('. '));
+      // Positive prototype: what the tool IS.
+      const posParts = [tool.name, tool.description];
+      if (tool.intent) posParts.push(tool.intent);
+      if (tool.examples?.length) posParts.push(tool.examples.join('. '));
+      if (tool.whenToUse?.length) posParts.push(tool.whenToUse.join('. '));
+      posEmbeddings.push(await embedder.embed(posParts.filter(Boolean).join('. '), 'document'));
+
+      // Negative prototype: what the tool is NOT (whenNotToUse). Embedded as
+      // plain sentences (no NOT: prefix) into a separate negVec.
       if (tool.whenNotToUse?.length) {
-        parts.push(tool.whenNotToUse.map((s) => `NOT: ${s}`).join('. '));
+        negEmbeddings.push(await embedder.embed(tool.whenNotToUse.join('. '), 'document'));
+      } else {
+        negEmbeddings.push([]); // → zero-length negVec, no polarity penalty
       }
-      const text = parts.filter(Boolean).join('. ');
-      embeddings.push(await embedder.embed(text, 'document'));
     }
-    await store.add(tools, embeddings);
-  }, 120_000); // embedding 14 tools can take a few seconds
+    await store.add(tools, posEmbeddings, negEmbeddings);
+  }, 120_000); // embedding 14 tools (pos + neg) can take a few seconds
 
   for (const { query, expected, negative } of SUITE) {
     it(`routes "${query}" → ${negative ? `(negative, <${NEGATIVE_FLOOR})` : expected}`, async () => {
