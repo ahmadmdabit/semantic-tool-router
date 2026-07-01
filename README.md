@@ -1,25 +1,17 @@
-# Semantic Tool Router CLI
+# Semantic Tool Router
 
 A pure TypeScript and Node.js implementation of a Semantic Tool Router. This CLI replaces static, full-catalog loading with Just-in-Time (JIT) Context Injection to avoid the "Fat Agent" architecture trap.
 
 ## Acknowledgments
 
-This implementation is based on the article **"The 100-Tool Agent Is a Trap: Overcoming the
-Latency, Cost, and Accuracy Collapse of Large-Scale Function Calling"** which is created based on YouTube session by **Sohail Shaikh**
-and **Ankush Rastogi** (The 100-Tool Agent Is a Trap - Sohail Shaikh & Ankush Rastogi, Prosodica), adapted from their research and production deployments.
+This implementation is based on the article **"The 100-Tool Agent Is a Trap: Overcoming the Latency, Cost, and Accuracy Collapse of Large-Scale Function Calling"** which is created based on YouTube session by **Sohail Shaikh** and **Ankush Rastogi** (The 100-Tool Agent Is a Trap - Sohail Shaikh & Ankush Rastogi, Prosodica), adapted from their research and production deployments.
 
 - [Read the article](https://gist.github.com/ahmadmdabit/f6b782835e9bec46613bd1435ea611cc)
 - [Watch the session on YouTube](https://www.youtube.com/watch?v=vh2VGuQ3zhY)
 
-Their article defines the core problem — the "Fat Agent" pattern collapses at ~50+ tools due to
-"lost in the middle" syndrome, token bloat (127K+ tokens for 741 tools), and TTFT spikes
-(>5s at 500+ tools) — and proposes the solution: **Semantic Routing** plus **Just-In-Time
-Context Injection**. The article benchmarks the Fat Agent baseline (78% → 13% accuracy as the
-catalog grows from 10 to 741 tools) against a routed architecture (~83% stable accuracy
-regardless of catalog size, ~99% token reduction).
+Their article defines the core problem — the "Fat Agent" pattern collapses at ~50+ tools due to "lost in the middle" syndrome, token bloat (127K+ tokens for 741 tools), and TTFT spikes (>5s at 500+ tools) — and proposes the solution: **Semantic Routing** plus **Just-In-Time Context Injection**. The article benchmarks the Fat Agent baseline (78% → 13% accuracy as the catalog grows from 10 to 741 tools) against a routed architecture (~83% stable accuracy regardless of catalog size, ~99% token reduction).
 
-The present implementation follows their three-step blueprint (build index offline, route each
-query at runtime, inject only the top-K schemas) and extends it with the improvements below.
+The present implementation follows their three-step blueprint (build index offline, route each query at runtime, inject only the top-K schemas) and extends it with the improvements below.
 
 ### Improvements over the original specification
 
@@ -42,7 +34,7 @@ query at runtime, inject only the top-K schemas) and extends it with the improve
 | 1   | **Evaluation benchmark** against Berkeley Function Calling Leaderboard or Toolbench                        | Not implemented | The 48-query regression suite is a regression guard, but a third-party benchmark (BFCL/Toolbench) at K = 3, 5, 10 has not been run                            |
 | 2   | **Fallback strategy** to widen K or trigger a secondary broader retrieval pass when the model fails a task | Not implemented | The `--threshold 0` escape hatch partially covers this, but no automatic widening                                                                             |
 | 3   | **Scalable vector DB** (Chroma, Pinecone, Qdrant)                                                          | Not implemented | Currently uses in-memory + JSONL; suitable for single-node deployments. A production catalog at hundreds of tools would benefit from a dedicated vector store |
-| 4   | **Observability logging** of selected tools, final tool call, and fallbacks                                | Not implemented | Raw scores are exposed via `--json`, but no structured logging or metrics pipeline yet                                                                        |
+| 4   | **Observability logging** of selected tools, final tool call, and fallbacks                                | Not implemented | Raw scores are exposed via `--json`, but no structured logging or metrics workflow yet                                                                        |
 
 ## Overview
 
@@ -159,6 +151,25 @@ Top relevant tools:
    ...
 ```
 
+### CLI Command Flow
+
+```mermaid
+flowchart TD
+  CLI[semantic-tool-router] --> IDX[index]
+  CLI --> ROUTE[route]
+
+  IDX --> L1[Load tools from directory]
+  L1 --> E[Embed tool texts]
+  E --> S[Save vector-store.jsonl]
+
+  ROUTE --> V[Load vector store]
+  V --> M{Metadata matches?}
+  M -->|No| ERR[Warn / error on model or dimension mismatch]
+  M -->|Yes| Q[Embed query]
+  Q --> RET[Retrieve top-K tools]
+  RET --> OUT[Print results or JSON]
+```
+
 ## Technology Decisions
 
 | Area            | Choice                                           | Rationale                                                                                                    |
@@ -268,7 +279,7 @@ Each tool JSON file declares both the semantic and boundary vocabulary the route
 | `triggers`     | no       | Query fragments (literal substrings or regex) that should boost this tool. Compiled into the S2 rule table at runtime.                                                                                                                                                                                                                              |
 | `boosts`       | no       | Other tool names to boost alongside this tool when a trigger fires. Lets one pattern pull in multiple tools.                                                                                                                                                                                                                                        |
 | `parameters`   | yes      | JSON Schema object.                                                                                                                                                                                                                                                                                                                                 |
-| `strict`       | no       | Schema-only flag (not used by pipeline).                                                                                                                                                                                                                                                                                                            |
+| `strict`       | no       | Schema-only flag (not used by workflow).                                                                                                                                                                                                                                                                                                            |
 
 All enrichment fields are optional and fully backward-compat; an older catalog without them still works but does not benefit from the boundary-vocabulary boost.
 
@@ -283,26 +294,22 @@ Both are embedded with the `search_document: ` prefix (so the index lies on the 
 
 Why two vectors: inside a single centroid, adding negative-boundary text can only _increase_ cosine similarity for queries that share tokens with it (cosine is additive over shared dimensions). By storing the boundary as a separate vector, the scorer can genuinely _subtract_ its contribution — the mechanism the earlier `NOT:` prefix was trying to approximate but could not achieve. The format is backward-compatible: old indexes written with a single `embedding` field load with a zero-length `negVec`.
 
+### Indexing Workflow
+
 ```mermaid
-flowchart TD
-    Start([Tool JSON Files]) --> Load[ToolLoader.loadFromDirectory]
-    Load --> Valid{Valid?}
-    Valid -- No --> Skip[Skip Invalid]
-    Valid -- Yes --> Split{Split text}
-    Split -->|name + desc + params + intent + examples + whenToUse| PosText[buildPosText]
-    Split -->|whenNotToUse| NegText[buildNegText]
-    PosText --> PosEmbed[OllamaEmbedder.embed type=document]
-    NegText --> NegEmbed[OllamaEmbedder.embed type=document]
-    PosEmbed -->|search_document: prefix + Matryoshka truncate| PosNorm[L2 Normalize posVec]
-    NegEmbed -->|search_document: prefix + Matryoshka truncate| NegNorm[L2 Normalize negVec]
-    PosNorm --> Dedup{Upsert by name?}
-    NegNorm --> Dedup
-    Dedup -- Yes --> Replace[Replace Existing]
-    Dedup -- No --> Add[Append New]
-    Replace --> Save[Persist vector-store.jsonl]
-    Add --> Save
-    Save --> Meta[Write Metadata model+dimensions+indexedAt]
-    Meta --> Done([Index Ready])
+flowchart LR
+  J[Tool JSON file] --> V1{"Valid JSON?"}
+  V1 -->|No| SKIP1[Skip malformed file]
+  V1 -->|Yes| V2{"Has name, description, parameters?"}
+  V2 -->|No| SKIP2[Skip invalid tool]
+  V2 -->|Yes| P[Build positive text]
+  V2 --> N[Build negative text]
+  P --> EP[Embed posVec]
+  N --> EN[Embed negVec or empty]
+  EP --> A["VectorStore.add()"]
+  EN --> A
+  A --> META[Set metadata]
+  META --> SAVE[Save JSONL]
 ```
 
 ### 3. Router Runtime (Per Request)
@@ -311,36 +318,47 @@ Ranking happens in three fused signals:
 
 - **S1 Polarity-adjusted cosine** — the query is embedded once with the `search_query: ` prefix. Each tool is scored as `cosine(q, posVec) - α·cosine(q, negVec)` where `α` defaults to `0.3` (overridable via `$POLARITYalpha`). A tool whose `whenNotToUse` text shares tokens with the query is genuinely demoted — this is what lets "show the directory structure recursively" rank scanDirectory above listDirectory despite both containing the token "directory". Tools without negative boundaries get a zero-length `negVec` and fall back to pure positive cosine. `VectorStore.search` then applies the S2 boost: any tool in `hints.boostTools` has its polarity-adjusted score multiplied by `hints.boost` (default 1.15).
 
-- **S2 Structural intent** — `intent-detector.ts` builds a two-layer rule table at runtime. **Dynamic rules** are compiled from each tool's `triggers` and `boosts` fields (so a tool added to the catalog yesterday is already covered). **Builtin baselines** cover the nine granular verb patterns (`glob`, `write`, `edit`, `move`, `rename`, `read`, `search`, `list`, `scan`) and match tools by name-or-description shape, so even tools without declared triggers get a reasonable bump. Dynamic rules are evaluated first, so a tool-specific trigger always wins over a generic verb. `*.ts` in the query, for example, fires the glob rule and bumps `glob` plus every tool named in `glob.boosts` (e.g. `grep`). The detector has zero hardcoded tool names — it walks the live catalog from the store on every `retrieve()`.
+### Vector Store Scoring Model
 
 ```mermaid
-flowchart TB
-    subgraph DynamicLayer["Layer 1: Dynamic Rules"]
-        direction LR
-        T1["glob triggers<br/>glob, file pattern, wildcard"] -->|"compile"| R1["boost glob + grep"]
-        T2["readFile triggers<br/>read file, print contents"] -->|"compile"| R2["boost readFile"]
-        T3["grep triggers<br/>grep, regex, search for"] -->|"compile"| R3["boost grep"]
-    end
+flowchart LR
+  QE[Normalized query embedding] --> S1A["cosine(query, posVec)"]
+  QE --> S1B["cosine(query, negVec)"]
+  S1A --> SUB[score = pos - alpha * neg]
+  S1B --> SUB
 
-    subgraph BaselineLayer["Layer 2: Builtin Baselines"]
-        direction LR
-        B1["glob metachar * ?"] -->|"match"| P1[glob pattern]
-        B2["write create overwrite"] -->|"match"| P2[write pattern]
-        B3["edit modify replace"] -->|"match"| P3[edit pattern]
-        B4["move relocate transfer"] -->|"match"| P4[move pattern]
-        B5["rename migrate"] -->|"match"| P5[rename pattern]
-        B6["read show print open"] -->|"match"| P6[read pattern]
-        B7["grep regex search for"] -->|"match"| P7[search pattern]
-        B8["list enumerate ls"] -->|"match"| P8[list pattern]
-        B9["scan walk traverse"] -->|"match"| P9[scan pattern]
-    end
+  SUB --> B{"S2 boostTools contains tool?"}
+  B -->|Yes| MUL[score *= boost]
+  B -->|No| PASS[keep score]
 
-    Query([Lower-cased Query]) --> DynamicLayer
-    DynamicLayer -->|"no dynamic match"| BaselineLayer
-    BaselineLayer -->|"no baseline match"| None["pattern: none"]
-    DynamicLayer -->|"longest dynamic match wins"| Out([IntentHints with pattern, boostTools, reason])
-    BaselineLayer -->|"first baseline match wins"| Out
-    None --> Out
+  MUL --> SORT[Sort descending]
+  PASS --> SORT
+  SORT --> SLICE[Return top-K]
+```
+
+- **S2 Structural intent** — `intent-detector.ts` builds a two-layer rule table at runtime. **Dynamic rules** are compiled from each tool's `triggers` and `boosts` fields (so a tool added to the catalog yesterday is already covered). **Builtin baselines** cover the nine granular verb patterns (`glob`, `write`, `edit`, `move`, `rename`, `read`, `search`, `list`, `scan`) and match tools by name-or-description shape, so even tools without declared triggers get a reasonable bump. Dynamic rules are evaluated first, so a tool-specific trigger always wins over a generic verb. `*.ts` in the query, for example, fires the glob rule and bumps `glob` plus every tool named in `glob.boosts` (e.g. `grep`). The detector has zero hardcoded tool names — it walks the live catalog from the store on every `retrieve()`.
+
+### Intent Detector Pattern
+
+```mermaid
+flowchart TD
+  Q[Query] --> D[detectIntent]
+
+  D --> DR[Evaluate dynamic rules from tool.triggers]
+
+  DR --> LR{Any dynamic trigger match?}
+  LR -->|Yes| SPEC[Pick longest trigger]
+  LR -->|No| BR[Evaluate builtin baseline rules]
+
+  BR --> BM{Any baseline match?}
+  BM -->|Yes| BT[Resolve tools by name/description regex]
+  BM -->|No| NONE[pattern = none, boost = 1]
+
+  SPEC --> BOOST[boostTools + boost factor]
+  BT --> BOOST
+  NONE --> BOOST
+
+  BOOST --> OUT[IntentHints]
 ```
 
 - **S3 Keyword overlap** — `keyword-overlap.ts` lower-cases both sides, strips stopwords and punctuation, expands glob-like tokens (`"*.ts"` also yields `"ts"` and `".ts"`), and scores Jaccard overlap. Crucially it is scored against the same composed text the index command produced (exposed by `VectorStore.toolTexts()`), so S1 and S3 operate on identical vocabularies.
@@ -353,33 +371,56 @@ scoreI = 1/(k + rankS1(i)) + 1/(k + rankS2(i)) + 1/(k + rankS3(i))    (k = 60)
 
 RRF is magnitude-agnostic, so heterogeneous signal scales don't need calibration. The fused score is normalized to [0,1], the optional `threshold` filter is applied, and the top-K tools are returned with their scores and a debug breakdown the `--json` flag surfaces.
 
+### Retrieval Workflow
+
 ```mermaid
 flowchart TD
-    Q([User Query]) --> Embed[Embed query with search_query: prefix]
-    Q --> Detect[detectIntent over dynamic + baseline rules<br/>longest trigger wins]
-    Q --> Tokens[tokenize: strip stopwords + expand glob tokens]
+  Q[User query] --> TI["detectIntent()"]
+  Q --> QE[Embed query]
+  TI --> H[SearchHints / boostTools]
+  QE --> DS["VectorStore.search()"]
+  H --> DS
 
-    Store[(vector-store.jsonl)] --> Vectors["L2-normalized posVec + negVec<br/>(negVec empty if no whenNotToUse)"]
+  Q --> KT[Keyword scoring]
+  T[All tools from store] --> KT
+  T --> DS
 
-    Embed --> Nq[normalize query to unit length]
-    Nq --> Cosine["score per tool = cosine(q, posVec)<br/>- alpha * cosine(q, negVec)<br/>  alpha defaults to 0.3"]
-    Vectors --> Cosine
+  DS --> RR1[Cosine ranks S1]
+  KT --> RR2[Keyword ranks S3]
+  TI --> RR3[Intent ranks S2]
 
-    Cosine --> R1[Rank by polarity-adjusted score desc]
-    Detect --> R2[Rank intent-boosted tools<br/>multiplicative boost applied on top]
-    Tokens --> Jaccard[Jaccard query ∩ toolText]
-    ToolTexts[VectorStore.toolTexts] --> Jaccard
-    Jaccard --> R3[Rank by keyword overlap desc]
+  RR1 --> RRF[Reciprocal Rank Fusion]
+  RR2 --> RRF
+  RR3 --> RRF
 
-    R1 --> RRF["RRF sum 1 over 60 plus rank"]
-    R2 --> RRF
-    R3 --> RRF
-    RRF --> Norm[normalize to 0..1]
-    Norm --> Thresh{threshold greater than zero?}
-    Thresh -- Yes --> Filter[drop below threshold]
-    Thresh -- No --> Sort[sort desc + take top-K]
-    Filter --> Sort
-    Sort --> Out([ScoredTool with polarity score and debug])
+  RRF --> TH{"Threshold >= floor?"}
+  TH -->|No| DROP[Drop tool]
+  TH -->|Yes| KEEP[Keep tool]
+  KEEP --> TOP[Return top-K]
+```
+
+### End-to-End Request Lifecycle
+
+```mermaid
+sequenceDiagram
+  participant User
+  participant CLI
+  participant Embedder
+  participant Store
+  participant Intent
+  participant Retriever
+
+  User->>CLI: route "query"
+  CLI->>Store: load()
+  CLI->>Retriever: retrieve(query)
+  Retriever->>Intent: detectIntent(query, tools)
+  Retriever->>Embedder: embed(query, "query")
+  Retriever->>Store: search(queryEmbedding, k, hints)
+  Retriever->>Store: toolTexts()
+  Retriever->>Retriever: compute keyword overlap
+  Retriever->>Retriever: fuse ranks with RRF
+  Retriever-->>CLI: top-K scored tools
+  CLI-->>User: output / JSON
 ```
 
 ## Design Principles
@@ -459,6 +500,40 @@ export interface IVectorStore {
 }
 ```
 
+### Data Model Shape
+
+```mermaid
+classDiagram
+  class Tool {
+    +name: string
+    +description: string
+    +parameters: object
+    +intent?: string
+    +examples?: string[]
+    +whenToUse?: string[]
+    +whenNotToUse?: string[]
+    +triggers?: string[]
+    +boosts?: string[]
+  }
+
+  class StoredVector {
+    +tool: Tool
+    +posVec: Float32Array
+    +negVec: Float32Array
+  }
+
+  class VectorStoreMetadata {
+    +model: string
+    +dimensions: number
+    +indexedAt: string
+  }
+
+  class ScoredTool {
+    +tool: Tool
+    +score: number
+  }
+```
+
 ## Mathematical Implementation
 
 To avoid heavy dependencies like `mathjs`, the core math is implemented as clean, pure, dependency-free TypeScript functions in `src/math/`.
@@ -528,7 +603,7 @@ Each description is the primary S1 signal, so write them as short, declarative, 
 
 ### Synonyms and Negation in Boundary Vocabulary
 
-Vary the phrasing of `whenToUse` / `whenNotToUse` to cover synonyms a user might choose ("search for", "locate", "find every"). The index command embeds `whenNotToUse` sentences as plain text into a separate negative prototype (`negVec`) — no `NOT:` prefix is added. At query time the negVec cosine is _subtracted_ from the posVec cosine, so a query that matches a tool's exclusion criteria is genuinely demoted. Tool authors should write plain, declarative "Use X instead" sentences; the pipeline handles the polarity math.
+Vary the phrasing of `whenToUse` / `whenNotToUse` to cover synonyms a user might choose ("search for", "locate", "find every"). The index command embeds `whenNotToUse` sentences as plain text into a separate negative prototype (`negVec`) — no `NOT:` prefix is added. At query time the negVec cosine is _subtracted_ from the posVec cosine, so a query that matches a tool's exclusion criteria is genuinely demoted. Tool authors should write plain, declarative "Use X instead" sentences; the workflow handles the polarity math.
 
 ### Tuning Polarity Strength
 
@@ -600,7 +675,7 @@ yarn dev route "List all the files with *.ts"
 
 ## Testing
 
-The project ships with a vitest suite of **167 tests** across unit, integration, and regression tiers, with a 90% coverage floor enforced in `vitest.config.ts`. Unit and integration tests run without any external service. The regression tier uses the real Ollama embedder and exercises the full pipeline end-to-end, so it requires a running Ollama with `nomic-embed-text:latest` pulled and a fresh index (`yarn start index ./tools`). A separate benchmark suite (10 variants) measures latency at scale using a mocked embedder.
+The project ships with a vitest suite of **167 tests** across unit, integration, and regression tiers, with a 90% coverage floor enforced in `vitest.config.ts`. Unit and integration tests run without any external service. The regression tier uses the real Ollama embedder and exercises the full workflow end-to-end, so it requires a running Ollama with `nomic-embed-text:latest` pulled and a fresh index (`yarn start index ./tools`). A separate benchmark suite (10 variants) measures latency at scale using a mocked embedder.
 
 ```bash
 yarn test                       # full suite (167 tests, ~30s with Ollama online)
@@ -639,18 +714,18 @@ All source modules reach 100% statement/function/line coverage with three except
 
 Latency benchmarks using a deterministic mocked embedder (no Ollama dependency). Each variant times `retrieve()` against an in-memory store with N synthetic tools:
 
-| Variant                                        |       Mean |        p99 | Samples |
-| ---------------------------------------------- | ---------: | ---------: | ------: |
-| Empty catalog (early return)                   |     0.9 µs |     1.8 µs | 534,389 |
-| k=1 from 14-tool catalog                       |    0.66 ms |    1.45 ms |     763 |
+| Variant                                        | Mean       | p99        | Samples |
+| ---------------------------------------------- | ---------- | ---------- | ------- |
+| Empty catalog (early return)                   | 0.9 µs     | 1.8 µs     | 534,389 |
+| k=1 from 14-tool catalog                       | 0.66 ms    | 1.45 ms    | 763     |
 | **14-tool catalog (current)**                  | **1.2 ms** | **3.8 ms** | **415** |
-| k=50 from 200-tool catalog                     |     9.9 ms |    14.5 ms |      51 |
-| 50-tool catalog (growth target)                |     3.0 ms |     9.6 ms |     170 |
-| **200-tool catalog (stress)**                  |  **11 ms** |  **17 ms** |  **46** |
-| High threshold 0.99 — heavy filtering          |     2.4 ms |     3.3 ms |     206 |
-| Intent-heavy query — S2 path                   |     2.7 ms |     5.1 ms |     183 |
-| Homogeneous catalog — worst-case sort (100t)   |     3.6 ms |     6.9 ms |     138 |
-| Polarity penalty — query matching whenNotToUse |     2.4 ms |     4.4 ms |     210 |
+| k=50 from 200-tool catalog                     | 9.9 ms     | 14.5 ms    | 51      |
+| 50-tool catalog (growth target)                | 3.0 ms     | 9.6 ms     | 170     |
+| **200-tool catalog (stress)**                  | **11 ms**  | **17 ms**  | **46**  |
+| High threshold 0.99 — heavy filtering          | 2.4 ms     | 3.3 ms     | 206     |
+| Intent-heavy query — S2 path                   | 2.7 ms     | 5.1 ms     | 183     |
+| Homogeneous catalog — worst-case sort (100t)   | 3.6 ms     | 6.9 ms     | 138     |
+| Polarity penalty — query matching whenNotToUse | 2.4 ms     | 4.4 ms     | 210     |
 
 Key observations:
 
